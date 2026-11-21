@@ -20,7 +20,8 @@ final class OCRService {
         request.recognitionLevel = recognitionLevel
         request.recognitionLanguages = sourceLanguage == "auto" ? [] : [sourceLanguage]
         request.usesLanguageCorrection = false
-        request.regionOfInterest = region.cgRect
+        let selectedRegion = region.clamped
+        request.regionOfInterest = selectedRegion.cgRect
 
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
         do {
@@ -29,7 +30,11 @@ final class OCRService {
             log.error("Vision OCR failed: \(String(describing: error), privacy: .public)")
             return nil
         }
+        // Vision uses the ROI as a processing hint. Filter the observations a
+        // second time so text whose bounding box lies outside the user's saved
+        // rectangle can never reach translation.
         let text = (request.results ?? [])
+            .filter { selectedRegion.cgRect.contains(CGPoint(x: $0.boundingBox.midX, y: $0.boundingBox.midY)) }
             .compactMap { $0.topCandidates(1).first?.string }
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)

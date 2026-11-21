@@ -465,10 +465,7 @@ struct StreamView: View {
 							.multilineTextAlignment(.center)
 							.environment(\.layoutDirection, .rightToLeft)
 							.foregroundStyle(translationColor(session.settings.translationTextColor))
-						Text(entry.sourceText)
-							.font(.system(size: max(14, session.settings.translationFontSize * 0.5)))
-							.foregroundStyle(.secondary)
-						ForEach(Array(session.translationCoordinator.recentEntries.dropFirst()), id: \.id) { previous in
+							ForEach(Array(session.translationCoordinator.recentEntries.dropFirst()), id: \.id) { previous in
 							Text(previous.translatedText)
 								.font(.system(size: max(14, session.settings.translationFontSize * 0.68), weight: .medium))
 								.foregroundStyle(translationColor(session.settings.translationTextColor).opacity(0.68))
