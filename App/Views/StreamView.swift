@@ -473,6 +473,7 @@ struct StreamView: View {
 								.font(.system(size: max(14, session.settings.translationFontSize * 0.68), weight: .medium))
 								.foregroundStyle(translationColor(session.settings.translationTextColor).opacity(0.68))
 								.multilineTextAlignment(.center)
+							}
 						} else {
 						ProgressView()
 						Text(session.translationCoordinator.lastError ?? session.translationCoordinator.translationStatusMessage)
