@@ -26,11 +26,13 @@ jobs:
       - name: Build the free OPUS-MT English-Arabic Core ML model
         run: |
           set -euo pipefail
-          python3 -m pip install --upgrade pip
-          python3 -m pip install 'transformers>=4.40,<5' 'torch>=2.2,<2.6' 'coremltools>=8,<9' sentencepiece safetensors
+          python3 -m venv .venv-ai
+          source .venv-ai/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install 'transformers>=4.40,<5' 'torch>=2.2,<2.6' 'coremltools>=8,<9' sentencepiece safetensors
           rm -rf App/AIModel
           mkdir -p App/AIModel
-          python3 scripts/convert-opus-mt-coreml.py --output App/AIModel
+          python scripts/convert-opus-mt-coreml.py --output App/AIModel
           test -d App/AIModel/OpusMTEnglishArabicEncoder.mlpackage
           test -d App/AIModel/OpusMTEnglishArabicDecoder.mlpackage
           test -f App/AIModel/source.spm
