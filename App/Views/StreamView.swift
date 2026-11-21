@@ -6,6 +6,7 @@ import Translation
 
 struct StreamView: View {
 	let console: Console
+	let startInBlackMode: Bool
 
 	@Environment(SettingsStore.self) private var settingsStore
 	@Environment(\.dismiss) private var dismiss
@@ -29,7 +30,13 @@ struct StreamView: View {
 	@State private var pin = ""
 	@State private var phone = PhoneStatus()
 	@State private var showHeatWarning = false
-	@State private var blackTranslationMode = false
+	@State private var blackTranslationMode: Bool
+
+	init(console: Console, startInBlackMode: Bool = false) {
+		self.console = console
+		self.startInBlackMode = startInBlackMode
+		_blackTranslationMode = State(initialValue: startInBlackMode)
+	}
 	/// The corner hints show once per stream screen, not again after a reconnect
 	@State private var hintShown = false
 

@@ -8,13 +8,17 @@ struct ConsoleListView: View {
 	@State private var showingAdd = false
 	@State private var showingSettings = false
 	@State private var playing: Console?
+	@State private var startBlackTranslation = false
 	@State private var waking: UUID?
 
 	var body: some View {
 			NavigationStack {
 				List {
 					Section {
-						TranslationModesView()
+						TranslationModesView(
+							liveAction: { startFirstConsole(black: false) },
+							blackAction: { startFirstConsole(black: true) }
+						)
 					}
 					if store.consoles.isEmpty {
 					ContentUnavailableView {
@@ -53,8 +57,8 @@ struct ConsoleListView: View {
 					.onAppear { discovery.stop() } // the sheet runs its own sweep
 			}
 			.sheet(isPresented: $showingSettings) { SettingsView() }
-			.fullScreenCover(item: $playing) { console in
-				StreamView(console: console)
+				.fullScreenCover(item: $playing) { console in
+					StreamView(console: console, startInBlackMode: startBlackTranslation)
 			}
 		}
 		.onAppear {
@@ -91,9 +95,19 @@ struct ConsoleListView: View {
 		}
 	}
 
-	private func connect(_ console: Console) {
-		playing = console
-	}
+		private func connect(_ console: Console) {
+			start(console, black: false)
+		}
+
+		private func startFirstConsole(black: Bool) {
+			guard let console = store.consoles.first else { showingAdd = true; return }
+			start(console, black: black)
+		}
+
+		private func start(_ console: Console, black: Bool) {
+			startBlackTranslation = black
+			playing = console
+		}
 
 	private func wake(_ console: Console) {
 		if ConsoleWaker.wake(console) {

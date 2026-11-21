@@ -11,7 +11,9 @@ extension TranslationMode: Identifiable {
 }
 
 struct TranslationModesView: View {
-    @State private var selectedMode: TranslationMode?
+	let liveAction: () -> Void
+	let blackAction: () -> Void
+	@State private var selectedMode: TranslationMode?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -23,9 +25,9 @@ struct TranslationModesView: View {
                 .multilineTextAlignment(.leading)
                 .environment(\.layoutDirection, .rightToLeft)
             HStack(spacing: 12) {
-                modeCard("Live Screen Translation", detail: "OCR من بث Remote Play", icon: "play.tv", mode: .liveRemotePlay)
-                modeCard("Independent Black Screen", detail: "شاشة عربية عالية التباين", icon: "rectangle.fill", mode: .independentBlack)
-                modeCard("TV Mode", detail: "Coming Soon", icon: "tv", mode: .tvComingSoon)
+				modeCard("Live Screen Translation", detail: "OCR من بث Remote Play", icon: "play.tv", mode: .liveRemotePlay, action: liveAction)
+				modeCard("Independent Black Screen", detail: "شاشة عربية عالية التباين", icon: "rectangle.fill", mode: .independentBlack, action: blackAction)
+				modeCard("TV Mode", detail: "Coming Soon", icon: "tv", mode: .tvComingSoon)
             }
         }
         .padding(.vertical, 8)
@@ -34,8 +36,8 @@ struct TranslationModesView: View {
         }
     }
 
-    private func modeCard(_ title: String, detail: String, icon: String, mode: TranslationMode) -> some View {
-        Button { selectedMode = mode } label: {
+	private func modeCard(_ title: String, detail: String, icon: String, mode: TranslationMode, action: (() -> Void)? = nil) -> some View {
+		Button { action?() } label: {
             VStack(alignment: .leading, spacing: 8) {
                 Image(systemName: icon).font(.title2)
                 Text(title).font(.headline).multilineTextAlignment(.leading)
@@ -46,7 +48,7 @@ struct TranslationModesView: View {
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18))
         }
         .buttonStyle(.plain)
-        .disabled(mode == .tvComingSoon)
+		.disabled(mode == .tvComingSoon || action == nil)
         .overlay(alignment: .topTrailing) {
             if mode == .tvComingSoon { Text("Coming Soon").font(.caption2).padding(6) }
         }
