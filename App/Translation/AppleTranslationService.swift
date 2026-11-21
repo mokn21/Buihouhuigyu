@@ -5,7 +5,7 @@ import Observation
 import SwiftUI
 import Translation
 
-@available(iOS 17.4, *)
+@available(iOS 18.0, *)
 @Observable
 final class AppleTranslationBridge: TextTranslationService {
     struct PendingRequest {

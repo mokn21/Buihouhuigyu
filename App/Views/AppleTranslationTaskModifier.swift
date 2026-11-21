@@ -4,10 +4,10 @@ import SwiftUI
 import Translation
 
 struct AppleTranslationTaskModifier: ViewModifier {
-    let bridge: AppleTranslationBridge?
+    let bridge: AnyObject?
 
     func body(content: Content) -> some View {
-        guard #available(iOS 17.4, *), let bridge else { return AnyView(content) }
+        guard #available(iOS 18.0, *), let bridge = bridge as? AppleTranslationBridge else { return AnyView(content) }
         return AnyView(
             content.translationTask(bridge.configuration) { session in
                 if #available(iOS 18.0, *) {
@@ -19,7 +19,7 @@ struct AppleTranslationTaskModifier: ViewModifier {
 }
 #else
 struct AppleTranslationTaskModifier: ViewModifier {
-    let bridge: AppleTranslationBridge?
+    let bridge: AnyObject?
     func body(content: Content) -> some View { content }
 }
 #endif
