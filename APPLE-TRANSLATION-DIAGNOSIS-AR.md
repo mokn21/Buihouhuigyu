@@ -48,3 +48,11 @@
 6. قياس زمن الترجمة أثناء PS Remote Play الحقيقي.
 
 حتى تنفيذ هذه الخطوات، لا يُعلن نجاح Apple Translation runtime أو سرعة الترجمة أثناء اللعب.
+
+## نتيجة البناء الأخيرة
+
+نجح Workflow رقم [44941279623](https://github.com/mokn21/Buihouhuigyu/actions/runs/44941279623) على commit `fd3cbb9` بعد بناء ChiakiKit قبل الاختبارات. نجحت اختبارات XCTest الثلاثة: `Executed 3 tests, with 0 failures`، ثم نجح بناء IPA وفحصها:
+
+`PASS: iPad-only IPA: UIDeviceFamily=[2], name=Orion Subtitles, valid Bundle ID=com.orion.subtitles`
+
+هذا يثبت إدارة السجل ودورة البناء والتغليف، ولا يثبت تشغيل Apple Translation runtime أو اتصال PS5 الحقيقي. ملف IPA الناتج موجود محليًا في `build/github-artifact-fd3cbb9/Orion-Subtitles.ipa`.
