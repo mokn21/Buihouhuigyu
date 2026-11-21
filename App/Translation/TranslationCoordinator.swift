@@ -42,7 +42,14 @@ final class TranslationCoordinator {
         if #available(iOS 18.0, *) {
             let bridge = AppleTranslationBridge()
             self.appleTranslationBridge = bridge
-            self.translator = translator ?? bridge
+            if let translator {
+                self.translator = translator
+            } else {
+                self.translator = TranslationFallbackService(
+                    primary: OpusMTEnglishArabicService(),
+                    fallback: bridge
+                )
+            }
         } else {
             self.appleTranslationBridge = nil
             self.translator = translator ?? DefaultTranslationService()
@@ -125,7 +132,7 @@ final class TranslationCoordinator {
 			return
 		}
 
-		translationStatusMessage = "أُرسل النص إلى Apple Translation…"
+			translationStatusMessage = "أُرسل النص إلى محرك OPUS-MT المحلي…"
 		submittedTranslationCount += 1
 		let task = Task { [weak self] in
             guard let self else { return }
@@ -137,7 +144,7 @@ final class TranslationCoordinator {
 	                }
 				self.cache[normalized] = translated
 				self.returnedTranslationCount += 1
-				self.translationStatusMessage = "عادت ترجمة عربية من Apple Translation."
+					self.translationStatusMessage = "عادت ترجمة عربية من OPUS-MT أو Apple Translation."
 				self.publish(translated, source: result, generation: generation)
 			} catch {
 	                guard !Task.isCancelled else { return }

@@ -10,7 +10,7 @@ jobs:
   build:
     name: Build unsigned Orion Subtitles IPA
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Download source and submodules
         uses: actions/checkout@v4
@@ -22,6 +22,20 @@ jobs:
 
       - name: Install build tools
         run: brew install cmake ninja xcodegen
+
+      - name: Build the free OPUS-MT English-Arabic Core ML model
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip
+          python3 -m pip install 'transformers>=4.40,<5' 'torch>=2.2,<2.6' 'coremltools>=8,<9' sentencepiece safetensors
+          rm -rf App/AIModel
+          mkdir -p App/AIModel
+          python3 scripts/convert-opus-mt-coreml.py --output App/AIModel
+          test -d App/AIModel/OpusMTEnglishArabicEncoder.mlpackage
+          test -d App/AIModel/OpusMTEnglishArabicDecoder.mlpackage
+          test -f App/AIModel/source.spm
+          test -f App/AIModel/target.spm
+          du -sh App/AIModel
 
       - name: Verify source tree and dependencies
         run: |

@@ -139,11 +139,11 @@ private struct TranslationSettingsForm: View {
 			RegionSlider(title: "عموديًا", value: $settings.translationRegion.y, range: 0...0.9)
 			RegionSlider(title: "العرض", value: $settings.translationRegion.width, range: 0.1...1)
 			RegionSlider(title: "الارتفاع", value: $settings.translationRegion.height, range: 0.1...1)
-		} header: {
-			Text("الترجمة")
-		} footer: {
-			Text("تُحفظ هذه الإعدادات وتُطبق على OCR والبث التالي. الترجمة العربية تستخدم Apple Translation عندما يدعمها إصدار iPadOS.")
-		}
+			} header: {
+				Text("الترجمة")
+			} footer: {
+				Text("تُحفظ هذه الإعدادات وتُطبق على OCR والبث التالي. يستخدم التطبيق نموذج OPUS-MT المحلي على iPadOS 18، مع Apple Translation كاحتياطي عند عدم توفر النموذج.")
+			}
 	}
 }
 
