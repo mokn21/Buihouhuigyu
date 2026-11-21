@@ -117,11 +117,24 @@ private struct TranslationSettingsForm: View {
 				HStack { Text("مكان الترجمة العمودي"); Spacer(); Text("\(Int(settings.translationPositionY * 100))٪") }
 				Slider(value: $settings.translationPositionY, in: 0.15...0.92)
 			}
-			VStack(alignment: .leading) {
-				HStack { Text("الفاصل بين فحوص OCR"); Spacer(); Text("\(settings.translationIntervalMs) مللي ثانية") }
-				Slider(value: Binding(get: { Double(settings.translationIntervalMs) }, set: { settings.translationIntervalMs = Int($0) }), in: 150...1000, step: 50)
-			}
-			Text("منطقة الالتقاط — اسحب القيم لتحديد المستطيل داخل إطار Remote Play")
+				VStack(alignment: .leading) {
+					HStack { Text("الفاصل بين فحوص OCR"); Spacer(); Text("\(settings.translationIntervalMs) مللي ثانية") }
+					Slider(value: Binding(get: { Double(settings.translationIntervalMs) }, set: { settings.translationIntervalMs = Int($0) }), in: 150...1000, step: 50)
+				}
+				Picker("لون النص", selection: $settings.translationTextColor) {
+					ForEach(TranslationColorChoice.allCases.filter { $0 != .black }) { Text($0.label).tag($0) }
+				}
+				Picker("لون الخلفية", selection: $settings.translationBackgroundColor) {
+					ForEach(TranslationColorChoice.allCases) { Text($0.label).tag($0) }
+				}
+				VStack(alignment: .leading) {
+					HStack { Text("عتامة الخلفية"); Spacer(); Text("\(Int(settings.translationBackgroundOpacity * 100))٪") }
+					Slider(value: $settings.translationBackgroundOpacity, in: 0...1)
+				}
+				Picker("وضع المظهر", selection: $settings.translationTheme) {
+					ForEach(TranslationTheme.allCases) { Text($0.label).tag($0) }
+				}
+				Text("منطقة الالتقاط — اسحب القيم لتحديد المستطيل داخل إطار Remote Play")
 			RegionSlider(title: "أفقيًا", value: $settings.translationRegion.x, range: 0...0.9)
 			RegionSlider(title: "عموديًا", value: $settings.translationRegion.y, range: 0...0.9)
 			RegionSlider(title: "العرض", value: $settings.translationRegion.width, range: 0.1...1)

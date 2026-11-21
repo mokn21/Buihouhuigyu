@@ -7,8 +7,13 @@ final class TranslationCoordinator {
     private(set) var state: TranslationState = .stopped
     private(set) var latestEntry: TranslationEntry?
     private(set) var lastError: String?
-    private(set) var processedFrames = 0
-    private(set) var skippedFrames = 0
+	private(set) var processedFrames = 0
+	private(set) var skippedFrames = 0
+	private(set) var ocrStatusMessage = "لم يبدأ OCR بعد."
+	private(set) var lastDetectedText = ""
+	private(set) var translationStatusMessage = "لم يُرسل نص إلى الترجمة بعد."
+	private(set) var submittedTranslationCount = 0
+	private(set) var returnedTranslationCount = 0
 
     var region: CaptureRegion = .fullScreen {
         didSet { ocr.region = region }
@@ -47,11 +52,13 @@ final class TranslationCoordinator {
 #endif
     }
 
-    func start() {
+	func start() {
         ocrTask?.cancel()
         ocrTask = nil
-        lastError = nil
-        state = .running
+		lastError = nil
+		ocrStatusMessage = "OCR يعمل وينتظر إطارًا نصيًا."
+		translationStatusMessage = "بانتظار نص إنجليزي من OCR."
+		state = .running
     }
 
     func pause() {
@@ -65,8 +72,10 @@ final class TranslationCoordinator {
         ocrTask = nil
         translationTasks.values.forEach { $0.cancel() }
         translationTasks.removeAll()
-        state = .stopped
-        lastSourceText = ""
+		state = .stopped
+		lastSourceText = ""
+		ocrStatusMessage = "تم إيقاف OCR والترجمة."
+		translationStatusMessage = "تم إيقاف الترجمة."
     }
 
     func submit(pixelBuffer: CVPixelBuffer) {
@@ -87,8 +96,12 @@ final class TranslationCoordinator {
         let ocr = self.ocr
         ocrTask = Task { [weak self] in
             guard let self else { return }
-            guard let result = await ocr.recognize(pixelBuffer: pixelBuffer, capturedAt: now), !Task.isCancelled else { return }
-            self.acceptOCR(result)
+			guard let result = await ocr.recognize(pixelBuffer: pixelBuffer, capturedAt: now), !Task.isCancelled else {
+				self.ocrStatusMessage = "لم يُكتشف نص في آخر إطار."
+				return
+			}
+			self.ocrStatusMessage = "اكتشف OCR نصًا إنجليزيًا."
+			self.acceptOCR(result)
         }
     }
 
@@ -98,27 +111,34 @@ final class TranslationCoordinator {
             skippedFrames += 1
             return
         }
-        lastSourceText = normalized
-        processedFrames += 1
+		lastSourceText = normalized
+		lastDetectedText = result.text
+		processedFrames += 1
         nextGeneration &+= 1
         let generation = nextGeneration
         let translator = self.translator
 
-        if let cached = cache[normalized] {
-            publish(cached, source: result, generation: generation)
-            return
-        }
+		if let cached = cache[normalized] {
+			translationStatusMessage = "تمت إعادة استخدام ترجمة محفوظة."
+			publish(cached, source: result, generation: generation)
+			return
+		}
 
-        let task = Task { [weak self] in
+		translationStatusMessage = "أُرسل النص إلى Apple Translation…"
+		submittedTranslationCount += 1
+		let task = Task { [weak self] in
             guard let self else { return }
             do {
                 let translated = try await translator.translate(result.text)
                 guard !Task.isCancelled else { return }
-                self.cache[normalized] = translated
-                self.publish(translated, source: result, generation: generation)
-            } catch {
+				self.cache[normalized] = translated
+				self.returnedTranslationCount += 1
+				self.translationStatusMessage = "عادت ترجمة عربية من Apple Translation."
+				self.publish(translated, source: result, generation: generation)
+			} catch {
                 guard !Task.isCancelled else { return }
-                self.lastError = error.localizedDescription
+				self.lastError = error.localizedDescription
+				self.translationStatusMessage = "فشلت الترجمة: \(error.localizedDescription)"
                 self.state = .failed(error.localizedDescription)
             }
             self.translationTasks[generation] = nil

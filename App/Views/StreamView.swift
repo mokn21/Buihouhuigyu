@@ -26,6 +26,8 @@ struct StreamView: View {
 	@State private var needsController = !Self.hasController
 	@State private var showSettingsHint = false
 	@State private var showPSButton = false
+	@State private var showTranslationDiagnostics = false
+	@State private var showRegionEditor = false
 	@State private var hidePSButton: Task<Void, Never>?
 	@State private var pin = ""
 	@State private var phone = PhoneStatus()
@@ -74,13 +76,35 @@ struct StreamView: View {
 			hintShown = true
 			flashSettingsHint()
 		}
-		.onChange(of: phone.isHot) { _, hot in
-			if hot, settingsStore.settings.fps > 30 { flashHeatWarning() }
-		}
-		.onChange(of: scenePhase) { _, phase in
+			.onChange(of: phone.isHot) { _, hot in
+				if hot, settingsStore.settings.fps > 30 { flashHeatWarning() }
+			}
+			.onChange(of: blackTranslationMode) { _, enabled in
+				session?.setTranslationBlackMode(enabled)
+			}
+			.onChange(of: scenePhase) { _, phase in
 			session?.setPaused(phase != .active || folded || portrait)
 		}
-			.sheet(isPresented: $showMenu) { menu }
+				.sheet(isPresented: $showMenu) { menu }
+				.sheet(isPresented: $showTranslationDiagnostics) {
+					if let session {
+						TranslationDiagnosticsView(coordinator: session.translationCoordinator, bridge: session.translationCoordinator.appleTranslationBridge)
+					}
+				}
+				.sheet(isPresented: $showRegionEditor) {
+					if let session {
+						CaptureRegionEditorView(
+							pixelBuffer: session.latestFrame,
+							region: Binding(
+								get: { settingsStore.settings.translationRegion },
+								set: {
+									settingsStore.settings.translationRegion = $0
+									session.apply(settingsStore.settings)
+								}
+							)
+						)
+					}
+				}
 			.modifier(AppleTranslationTaskModifier(bridge: session?.translationCoordinator.appleTranslationBridge))
 		}
 
@@ -161,6 +185,7 @@ struct StreamView: View {
 		session.input.onMenuCombo = { showMenu = true }
 			self.session = session
 			session.start()
+			session.setTranslationBlackMode(startInBlackMode)
 			session.translationCoordinator.start()
 		}
 
@@ -351,10 +376,10 @@ struct StreamView: View {
 							.font(.system(size: max(12, session.settings.translationFontSize * 0.45)))
 							.foregroundStyle(.white.opacity(0.7))
 					}
-					.foregroundStyle(.white)
-					.padding(.horizontal, 18)
-					.padding(.vertical, 10)
-					.background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 14))
+						.foregroundStyle(translationColor(session.settings.translationTextColor))
+						.padding(.horizontal, 18)
+						.padding(.vertical, 10)
+						.background(translationColor(session.settings.translationBackgroundColor).opacity(session.settings.translationBackgroundOpacity), in: RoundedRectangle(cornerRadius: 14))
 					.frame(maxWidth: min(geo.size.width - 80, 900))
 					.position(x: geo.size.width / 2, y: geo.size.height * session.settings.translationPositionY)
 				}
@@ -366,9 +391,10 @@ struct StreamView: View {
 			VStack(spacing: 18) {
 				if let entry = session.translationCoordinator.latestEntry {
 					Text(entry.translatedText)
-						.font(.system(size: session.settings.translationFontSize + 10, weight: .bold))
-						.multilineTextAlignment(.center)
-						.environment(\.layoutDirection, .rightToLeft)
+							.font(.system(size: session.settings.translationFontSize + 10, weight: .bold))
+							.multilineTextAlignment(.center)
+							.environment(\.layoutDirection, .rightToLeft)
+							.foregroundStyle(translationColor(session.settings.translationTextColor))
 					Text(entry.sourceText)
 						.font(.system(size: max(14, session.settings.translationFontSize * 0.5)))
 						.foregroundStyle(.secondary)
@@ -379,9 +405,19 @@ struct StreamView: View {
 			}
 			.frame(maxWidth: .infinity, maxHeight: .infinity)
 			.padding(40)
-			.background(Color.black.ignoresSafeArea())
-			.environment(\.layoutDirection, .rightToLeft)
-		}
+				.background(Color.black.ignoresSafeArea())
+				.environment(\.layoutDirection, .rightToLeft)
+			}
+
+			private func translationColor(_ choice: TranslationColorChoice) -> Color {
+				switch choice {
+				case .black: .black
+				case .white: .white
+				case .yellow: .yellow
+				case .cyan: .cyan
+				case .green: .green
+				}
+			}
 
 		// MARK: - Overlays
 
@@ -527,6 +563,18 @@ struct StreamView: View {
 				}
 				Section("Arabic translation") {
 					Toggle("شاشة الترجمة السوداء", isOn: $blackTranslationMode)
+					Button("اختبار الترجمة") {
+						showMenu = false
+						showTranslationDiagnostics = true
+					}
+					Button("لوحة تشخيص الترجمة") {
+						showMenu = false
+						showTranslationDiagnostics = true
+					}
+					Button("محرر منطقة OCR") {
+						showMenu = false
+						showRegionEditor = true
+					}
 					Button(session?.translationCoordinator.state == .running ? "Pause translation" : "Start translation") {
 						if session?.translationCoordinator.state == .running {
 							session?.translationCoordinator.pause()

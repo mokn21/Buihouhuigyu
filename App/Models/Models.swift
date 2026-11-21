@@ -94,6 +94,40 @@ enum DisplayMode: String, Codable, CaseIterable, Identifiable {
 	var label: String { self == .fit ? "Fit" : "Zoom to fill" }
 }
 
+enum TranslationTheme: String, Codable, CaseIterable, Identifiable {
+	case sideScreen
+	case midnight
+	case pitchBlack
+
+	var id: String { rawValue }
+	var label: String {
+		switch self {
+		case .sideScreen: "SideScreen"
+		case .midnight: "Midnight"
+		case .pitchBlack: "Pitch Black"
+		}
+	}
+}
+
+enum TranslationColorChoice: String, Codable, CaseIterable, Identifiable {
+	case black
+	case white
+	case yellow
+	case cyan
+	case green
+
+	var id: String { rawValue }
+	var label: String {
+		switch self {
+		case .black: "أسود"
+		case .white: "أبيض"
+		case .yellow: "أصفر"
+		case .cyan: "سماوي"
+		case .green: "أخضر"
+		}
+	}
+}
+
 struct StreamSettings: Codable, Equatable {
 	var resolution: StreamResolution = .p1080
 	var fps: Int = 60
@@ -116,6 +150,10 @@ struct StreamSettings: Codable, Equatable {
 	var translationFontSize: Double = 28
 	var translationPositionY: Double = 0.88
 	var translationIntervalMs: Int = 250
+	var translationTextColor: TranslationColorChoice = .white
+	var translationBackgroundColor: TranslationColorChoice = .black
+	var translationBackgroundOpacity: Double = 0.72
+	var translationTheme: TranslationTheme = .sideScreen
 
 	/// HDR needs HEVC
 	var effectiveCodec: VideoCodecChoice { hdr ? .h265 : codec }
@@ -141,10 +179,14 @@ struct StreamSettings: Codable, Equatable {
 		translationSourceLanguage = try c.decodeIfPresent(String.self, forKey: .translationSourceLanguage) ?? d.translationSourceLanguage
 		translationTargetLanguage = try c.decodeIfPresent(String.self, forKey: .translationTargetLanguage) ?? d.translationTargetLanguage
 		translationRegion = try c.decodeIfPresent(CaptureRegion.self, forKey: .translationRegion) ?? d.translationRegion
-		translationFontSize = try c.decodeIfPresent(Double.self, forKey: .translationFontSize) ?? d.translationFontSize
-		translationPositionY = try c.decodeIfPresent(Double.self, forKey: .translationPositionY) ?? d.translationPositionY
-		translationIntervalMs = try c.decodeIfPresent(Int.self, forKey: .translationIntervalMs) ?? d.translationIntervalMs
-	}
+			translationFontSize = try c.decodeIfPresent(Double.self, forKey: .translationFontSize) ?? d.translationFontSize
+			translationPositionY = try c.decodeIfPresent(Double.self, forKey: .translationPositionY) ?? d.translationPositionY
+			translationIntervalMs = try c.decodeIfPresent(Int.self, forKey: .translationIntervalMs) ?? d.translationIntervalMs
+			translationTextColor = try c.decodeIfPresent(TranslationColorChoice.self, forKey: .translationTextColor) ?? d.translationTextColor
+			translationBackgroundColor = try c.decodeIfPresent(TranslationColorChoice.self, forKey: .translationBackgroundColor) ?? d.translationBackgroundColor
+			translationBackgroundOpacity = try c.decodeIfPresent(Double.self, forKey: .translationBackgroundOpacity) ?? d.translationBackgroundOpacity
+			translationTheme = try c.decodeIfPresent(TranslationTheme.self, forKey: .translationTheme) ?? d.translationTheme
+		}
 }
 
 @Observable

@@ -1,4 +1,5 @@
 import ChiakiKit
+import CoreVideo
 import Foundation
 import Observation
 import UIKit
@@ -42,6 +43,8 @@ final class StreamSession {
 	private(set) var keyboardText: String?
 	/// Folded or backgrounded: video isn't drawn and audio is muted, connection stays up
 	private(set) var paused = false
+	/// The most recent decoded frame, used only for the in-app OCR region editor.
+	@ObservationIgnored private(set) var latestFrame: CVPixelBuffer?
 
 	let console: Console
 	private(set) var settings: StreamSettings
@@ -94,8 +97,9 @@ final class StreamSession {
 		let decoder = VideoDecoder(hevc: codec == .h265, tenBit: settings.hdr)
 			decoder.onFrame = { [weak renderer, weak self] frame in
 				renderer?.display(frame)
-				guard let self else { return }
-				Task { @MainActor in
+					guard let self else { return }
+					self.latestFrame = frame
+					Task { @MainActor in
 					self.translationCoordinator.submit(pixelBuffer: frame)
 				}
 			}
@@ -255,6 +259,11 @@ final class StreamSession {
 		}
 	}
 
+	/// Black translation mode keeps decoding frames but mutes Remote Play audio.
+	func setTranslationBlackMode(_ enabled: Bool) {
+		audio.muted = enabled || paused
+	}
+
 	func submitPIN(_ pin: String) {
 		guard let handle else { return }
 		ck_session_set_login_pin(handle, pin)
@@ -296,8 +305,9 @@ final class StreamSession {
 			ck_session_destroy(handle)
 		}
 		handle = nil
-		decoder?.invalidate()
-		decoder = nil
+			decoder?.invalidate()
+			decoder = nil
+			latestFrame = nil
 		selfRef?.release()
 		selfRef = nil
 		UIApplication.shared.isIdleTimerDisabled = false
