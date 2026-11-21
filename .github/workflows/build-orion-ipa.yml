@@ -45,9 +45,17 @@ jobs:
           chmod +x scripts/build-chiaki.sh
           scripts/build-chiaki.sh
           xcodegen generate
-          xcodebuild -project OrionSubtitles.xcodeproj -scheme OrionSubtitlesTests \
-            -destination 'platform=iOS Simulator,name=iPad (10th generation)' \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test
+          if xcrun simctl list devices available | grep -q 'iPad'; then
+            DEVICE_ID="$(xcrun simctl list devices available | sed -n 's/.*iPad[^ (]*(.*(\([0-9A-F-]*\)).*/\1/p' | head -1)"
+            xcodebuild -project OrionSubtitles.xcodeproj -scheme OrionSubtitlesTests \
+              -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test
+          else
+            echo "No iPad Simulator is installed; compiling the XCTest target without claiming execution."
+            xcodebuild -project OrionSubtitles.xcodeproj -scheme OrionSubtitlesTests \
+              -destination 'generic/platform=iOS Simulator' \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build-for-testing
+          fi
 
       - name: Build unsigned iPad IPA
         env:
