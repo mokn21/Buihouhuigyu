@@ -1,0 +1,63 @@
+name: Build Orion IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build unsigned Orion Subtitles IPA
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Download source and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Show Apple build environment
+        run: xcodebuild -version
+
+      - name: Install build tools
+        run: brew install cmake ninja xcodegen
+
+      - name: Verify source tree and dependencies
+        run: |
+          set -euo pipefail
+          test -f project.yml
+          test -f .gitmodules
+          test -f ChiakiKit/CMakeLists.txt
+          test -f ChiakiKit/include/ck_bridge.h
+          test -f scripts/build-chiaki.sh
+          test -f scripts/package-ipa.sh
+          test -f scripts/verify-ipad-ipa.sh
+          test -f vendor/chiaki-ng/CMakeLists.txt
+          test -f vendor/mbedtls/CMakeLists.txt
+          test -f vendor/opus/CMakeLists.txt
+          git submodule status --recursive
+          echo "PASS: project files and recursive submodule dependencies are available."
+
+      - name: Build unsigned iPad IPA
+        env:
+          VERSION: 0.1.0
+          BUILD_NUMBER: ${{ github.run_number }}
+          BUNDLE_ID: com.orion.subtitles
+        run: |
+          set -euo pipefail
+          chmod +x scripts/build-chiaki.sh scripts/package-ipa.sh scripts/verify-ipad-ipa.sh
+          scripts/package-ipa.sh
+
+      - name: Verify iPad IPA and Bundle ID
+        env:
+          EXPECTED_BUNDLE_ID: com.orion.subtitles
+        run: scripts/verify-ipad-ipa.sh build/Orion-Subtitles.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: orion-subtitles-ipa
+          path: build/Orion-Subtitles.ipa
+          if-no-files-found: error
+          retention-days: 7
