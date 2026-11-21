@@ -23,6 +23,11 @@ jobs:
       - name: Install build tools
         run: brew install cmake ninja xcodegen
 
+      - name: Select supported Python for Core ML conversion
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Build the free OPUS-MT English-Arabic Core ML model
         run: |
           set -euo pipefail
