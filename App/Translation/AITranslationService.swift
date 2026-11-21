@@ -1,20 +1,23 @@
 import Foundation
 
-#if canImport(CoreML) && canImport(SentencepieceTokenizer)
+#if canImport(CoreML) && canImport(Tokenizers)
 import CoreML
-import SentencepieceTokenizer
+import Tokenizers
 
 @available(iOS 18.0, *)
 final class OpusMTEnglishArabicService: TextTranslationService {
     private let encoder: MLModel?
     private let decoder: MLModel?
-    private let sourceTokenizer: SentencepieceTokenizer?
-    private let targetTokenizer: SentencepieceTokenizer?
+    private var sourceTokenizer: Tokenizer?
+    private var targetTokenizer: Tokenizer?
+    private let sourceTokenizerURL: URL?
+    private let targetTokenizerURL: URL?
     private let initializationError: Error?
     private let maxTokens = 64
     private let padTokenID = 61246
     private let eosTokenID = 25897
     private let decoderStartTokenID = 61246
+    private let arabicPrefixTokenID = 4212
     private let lock = NSLock()
 
     init() {
@@ -22,21 +25,23 @@ final class OpusMTEnglishArabicService: TextTranslationService {
             guard
                 let encoderURL = Bundle.main.url(forResource: "OpusMTEnglishArabicEncoder", withExtension: "mlmodelc"),
                 let decoderURL = Bundle.main.url(forResource: "OpusMTEnglishArabicDecoder", withExtension: "mlmodelc"),
-                let sourceURL = Bundle.main.url(forResource: "source", withExtension: "spm"),
-                let targetURL = Bundle.main.url(forResource: "target", withExtension: "spm")
-            else { throw TranslationError.unavailable("لم يتم تضمين نموذج OPUS-MT داخل نسخة التطبيق.") }
+                let sourceURL = Bundle.main.url(forResource: "source-tokenizer", withExtension: nil),
+                let targetURL = Bundle.main.url(forResource: "target-tokenizer", withExtension: nil)
+            else { throw TranslationError.unavailable("لم يتم تضمين ملفات tokenizer الخاصة بنموذج OPUS-MT.") }
             let configuration = MLModelConfiguration()
             configuration.computeUnits = .all
             encoder = try MLModel(contentsOf: encoderURL, configuration: configuration)
             decoder = try MLModel(contentsOf: decoderURL, configuration: configuration)
-            sourceTokenizer = try SentencepieceTokenizer(modelPath: sourceURL.path)
-            targetTokenizer = try SentencepieceTokenizer(modelPath: targetURL.path)
+            sourceTokenizerURL = sourceURL
+            targetTokenizerURL = targetURL
             initializationError = nil
         } catch {
             encoder = nil
             decoder = nil
             sourceTokenizer = nil
             targetTokenizer = nil
+            sourceTokenizerURL = nil
+            targetTokenizerURL = nil
             initializationError = error
         }
     }
@@ -44,9 +49,20 @@ final class OpusMTEnglishArabicService: TextTranslationService {
     func translate(_ text: String) async throws -> String {
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { throw TranslationError.failed("لا يوجد نص لترجمته.") }
+        try await loadTokenizersIfNeeded()
         return try await Task.detached(priority: .userInitiated) { [self] in
             try self.translateSynchronously(cleaned)
         }.value
+    }
+
+    private func loadTokenizersIfNeeded() async throws {
+        if sourceTokenizer != nil, targetTokenizer != nil { return }
+        if let initializationError { throw initializationError }
+        guard let sourceTokenizerURL, let targetTokenizerURL else {
+            throw TranslationError.unavailable("لم يتم تضمين ملفات tokenizer الخاصة بنموذج OPUS-MT.")
+        }
+        sourceTokenizer = try await AutoTokenizer.from(modelFolder: sourceTokenizerURL, strict: false)
+        targetTokenizer = try await AutoTokenizer.from(modelFolder: targetTokenizerURL, strict: false)
     }
 
     private func translateSynchronously(_ text: String) throws -> String {
@@ -57,7 +73,8 @@ final class OpusMTEnglishArabicService: TextTranslationService {
             throw TranslationError.unavailable("لم يتم تحميل نموذج OPUS-MT المحلي.")
         }
 
-        var sourceIDs = sourceTokenizer.encode(text).map(Int32.init)
+        var sourceIDs = sourceTokenizer.encode(text: text, addSpecialTokens: false).map(Int32.init)
+        sourceIDs.insert(Int32(arabicPrefixTokenID), at: 0)
         if sourceIDs.last != Int32(eosTokenID) { sourceIDs.append(Int32(eosTokenID)) }
         sourceIDs = Array(sourceIDs.prefix(maxTokens))
         let sourceInput = try makeArray(values: sourceIDs, count: maxTokens, fill: Int32(padTokenID))
@@ -86,7 +103,8 @@ final class OpusMTEnglishArabicService: TextTranslationService {
             if next == eosTokenID { break }
         }
 
-        let translated = targetTokenizer.decode(outputIDs.map(Int.init))
+        let decodedIDs = outputIDs.filter { $0 != Int32(decoderStartTokenID) && $0 != Int32(eosTokenID) }
+        let translated = targetTokenizer.decode(tokens: decodedIDs.map(Int.init), skipSpecialTokens: false)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !translated.isEmpty else {
             throw TranslationError.failed("أعاد نموذج OPUS-MT نتيجة فارغة؛ لم تُعرض ترجمة وهمية.")
@@ -128,7 +146,7 @@ struct TranslationFallbackService: TextTranslationService {
 #else
 struct OpusMTEnglishArabicService: TextTranslationService {
     func translate(_ text: String) async throws -> String {
-        throw TranslationError.unavailable("محرك OPUS-MT يتطلب iPadOS 18 وCore ML وحزمة SentencePiece.")
+        throw TranslationError.unavailable("محرك OPUS-MT يتطلب iPadOS 18 وCore ML وحزمة Tokenizers.")
     }
 }
 #endif

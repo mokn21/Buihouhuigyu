@@ -7,10 +7,41 @@ step. Fixed shapes keep the export deterministic for the first integration.
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import torch
 from transformers import MarianMTModel, MarianTokenizer
 import coremltools as ct
+import sentencepiece as spm
+from tokenizers import Tokenizer
+from tokenizers import models, normalizers, pre_tokenizers, decoders
+from huggingface_hub import snapshot_download
+
+
+def write_swift_tokenizer(spm_path: Path, vocab_path: Path, output: Path) -> None:
+    """Create a pure-Swift Unigram tokenizer using Marian's vocab ID order."""
+    vocab = json.loads(vocab_path.read_text(encoding='utf-8'))
+    processor = spm.SentencePieceProcessor(model_file=str(spm_path))
+    by_id = {index: token for token, index in vocab.items()}
+    pairs = []
+    for index in range(len(by_id)):
+        token = by_id[index]
+        piece_id = processor.piece_to_id(token)
+        score = float(processor.get_score(piece_id)) if piece_id >= 0 else -20.0
+        pairs.append((token, score))
+    tokenizer = Tokenizer(models.Unigram(pairs, unk_id=vocab.get('<unk>', 0)))
+    tokenizer.normalizer = normalizers.Sequence([normalizers.Nmt(), normalizers.NFKC()])
+    tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(replacement='▁', prepend_scheme='always')
+    tokenizer.decoder = decoders.Metaspace(replacement='▁', prepend_scheme='always')
+    output.mkdir(parents=True, exist_ok=True)
+    tokenizer.save(str(output / 'tokenizer.json'))
+    (output / 'tokenizer_config.json').write_text(json.dumps({
+        'tokenizer_class': 'PreTrainedTokenizer',
+        'model_type': 'marian',
+        'unk_token': '<unk>',
+        'eos_token': '</s>',
+        'pad_token': '<pad>',
+    }), encoding='utf-8')
 
 
 def main() -> None:
@@ -23,7 +54,20 @@ def main() -> None:
 
     args.output.mkdir(parents=True, exist_ok=True)
     tokenizer = MarianTokenizer.from_pretrained(args.model)
-    tokenizer.save_pretrained(args.output)
+    snapshot = Path(snapshot_download(
+        args.model,
+        allow_patterns=['source.spm', 'target.spm', 'vocab.json'],
+    ))
+    write_swift_tokenizer(
+        snapshot / 'source.spm',
+        snapshot / 'vocab.json',
+        args.output / 'source-tokenizer',
+    )
+    write_swift_tokenizer(
+        snapshot / 'target.spm',
+        snapshot / 'vocab.json',
+        args.output / 'target-tokenizer',
+    )
     model = MarianMTModel.from_pretrained(args.model).eval()
     model.config.use_cache = False
 

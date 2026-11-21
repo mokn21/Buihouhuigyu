@@ -40,8 +40,8 @@ jobs:
           python scripts/convert-opus-mt-coreml.py --output App/AIModel
           test -d App/AIModel/OpusMTEnglishArabicEncoder.mlpackage
           test -d App/AIModel/OpusMTEnglishArabicDecoder.mlpackage
-          test -f App/AIModel/source.spm
-          test -f App/AIModel/target.spm
+          test -f App/AIModel/source-tokenizer/tokenizer.json
+          test -f App/AIModel/target-tokenizer/tokenizer.json
           du -sh App/AIModel
 
       - name: Verify source tree and dependencies
