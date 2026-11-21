@@ -8,6 +8,8 @@ struct CaptureRegionEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: CaptureRegion
     @State private var zoom: Double = 1
+    @State private var moveStart: CaptureRegion?
+    @State private var resizeStart: CaptureRegion?
 
     init(pixelBuffer: CVPixelBuffer?, region: Binding<CaptureRegion>) {
         self.pixelBuffer = pixelBuffer
@@ -31,7 +33,7 @@ struct CaptureRegionEditorView: View {
                 .padding(.horizontal)
 
                 VStack(spacing: 8) {
-                    labeledSlider(title: "التكبير/التصغير", value: $zoom, range: 0.5...2.0, label: String(format: "%.0f%%", (zoom - 1) * 100))
+                    labeledSlider(title: "تكبير المعاينة", value: $zoom, range: 0.5...2.0, label: String(format: "%.0f%%", zoom * 100))
                     labeledSlider(title: "العرض", value: $draft.width, range: 0.05...1, label: String(format: "%.0f%%", draft.width * 100))
                     labeledSlider(title: "الارتفاع", value: $draft.height, range: 0.05...1, label: String(format: "%.0f%%", draft.height * 100))
                 }
@@ -79,10 +81,12 @@ struct CaptureRegionEditorView: View {
             .stroke(Color.cyan, lineWidth: 3)
             .frame(width: width, height: height)
             .overlay(alignment: .bottomTrailing) {
-                Circle().fill(.white).frame(width: 18, height: 18)
-                    .gesture(resizeGesture(canvas: canvas))
+                Circle().fill(.white).frame(width: 22, height: 22)
+                    .contentShape(Circle())
+                    .highPriorityGesture(resizeGesture(canvas: canvas))
             }
             .position(x: origin.x + width / 2, y: origin.y + height / 2)
+            .contentShape(Rectangle())
             .gesture(moveGesture(canvas: canvas))
             .overlay(alignment: .topLeading) {
                 Text("اسحب المربع الأزرق")
@@ -96,18 +100,24 @@ struct CaptureRegionEditorView: View {
     }
 
     private func moveGesture(canvas: CGSize) -> some Gesture {
-        DragGesture().onChanged { value in
-            let r = draft.clamped
-            draft.x = min(max(r.x + value.translation.width / canvas.width, 0), 1 - r.width)
-            draft.y = min(max(r.y - value.translation.height / canvas.height, 0), 1 - r.height)
+        DragGesture(minimumDistance: 2).onChanged { value in
+            if moveStart == nil { moveStart = draft.clamped }
+            guard let start = moveStart else { return }
+            draft.x = min(max(start.x + value.translation.width / canvas.width, 0), 1 - start.width)
+            draft.y = min(max(start.y - value.translation.height / canvas.height, 0), 1 - start.height)
+        }.onEnded { _ in
+            moveStart = nil
         }
     }
 
     private func resizeGesture(canvas: CGSize) -> some Gesture {
-        DragGesture().onChanged { value in
-            let r = draft.clamped
-            draft.width = min(max(r.width + value.translation.width / canvas.width, 0.05), 1 - r.x)
-            draft.height = min(max(r.height - value.translation.height / canvas.height, 0.05), 1 - r.y)
+        DragGesture(minimumDistance: 2).onChanged { value in
+            if resizeStart == nil { resizeStart = draft.clamped }
+            guard let start = resizeStart else { return }
+            draft.width = min(max(start.width + value.translation.width / canvas.width, 0.05), 1 - start.x)
+            draft.height = min(max(start.height - value.translation.height / canvas.height, 0.05), 1 - start.y)
+        }.onEnded { _ in
+            resizeStart = nil
         }
     }
 

@@ -81,7 +81,7 @@ enum VideoCodecChoice: String, Codable, CaseIterable, Identifiable {
 	case h264
 
 	var id: String { rawValue }
-	var label: String { self == .h265 ? "H.265 (HEVC)" : "H.264" }
+    var label: String { self == .h265 ? "H.265 (HEVC)" : "H.264" }
 }
 
 enum DisplayMode: String, Codable, CaseIterable, Identifiable {
@@ -91,7 +91,7 @@ enum DisplayMode: String, Codable, CaseIterable, Identifiable {
 	case zoom
 
 	var id: String { rawValue }
-	var label: String { self == .fit ? "Fit" : "Zoom to fill" }
+    var label: String { self == .fit ? "ملاءمة كاملة" : "تكبير لملء الشاشة" }
 }
 
 enum TranslationTheme: String, Codable, CaseIterable, Identifiable {
@@ -102,9 +102,9 @@ enum TranslationTheme: String, Codable, CaseIterable, Identifiable {
 	var id: String { rawValue }
 	var label: String {
 		switch self {
-		case .sideScreen: "SideScreen"
-		case .midnight: "Midnight"
-		case .pitchBlack: "Pitch Black"
+            case .sideScreen: "شاشة جانبية"
+            case .midnight: "منتصف الليل"
+            case .pitchBlack: "أسود كامل"
 		}
 	}
 }

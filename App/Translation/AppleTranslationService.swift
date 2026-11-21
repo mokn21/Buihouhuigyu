@@ -20,6 +20,7 @@ final class AppleTranslationBridge: TextTranslationService {
     private let requestStream: AsyncStream<PendingRequest>
     private let requestContinuation: AsyncStream<PendingRequest>.Continuation
     private(set) var statusMessage = "لم تبدأ الترجمة بعد."
+    private(set) var sessionReady = false
 
     // One stream, one worker. Re-running translationTask replaces the worker;
     // it never starts a second consumer of the same stream.
@@ -45,7 +46,25 @@ final class AppleTranslationBridge: TextTranslationService {
         }
 
         let id = UUID()
-        return try await withTaskCancellationHandler(operation: {
+        return try await withThrowingTaskGroup(of: String.self) { group in
+            group.addTask { [weak self] in
+                guard let self else { throw TranslationError.failed("انتهت جلسة الترجمة.") }
+                return try await self.enqueueAndWait(id: id, text: text)
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(20))
+                throw TranslationError.failed("لم تستجب جلسة Apple Translation خلال 20 ثانية. تحقق من الجلسة ونماذج اللغة ثم حاول مرة أخرى.")
+            }
+            defer { group.cancelAll() }
+            guard let result = try await group.next() else {
+                throw TranslationError.failed("لم تُرجع جلسة Apple Translation نتيجة.")
+            }
+            return result
+        }
+    }
+
+    private func enqueueAndWait(id: UUID, text: String) async throws -> String {
+        try await withTaskCancellationHandler(operation: {
             try await withCheckedThrowingContinuation { continuation in
                 let request = PendingRequest(id: id, text: text, continuation: continuation)
                 pendingRequests[id] = request
@@ -53,9 +72,13 @@ final class AppleTranslationBridge: TextTranslationService {
                 requestContinuation.yield(request)
             }
         }, onCancel: {
-            // The worker handles cancellation and either requeues the request
-            // or completes it with an explicit error. No fake result is used.
+            self.cancelRequest(id)
         })
+    }
+
+    private func cancelRequest(_ id: UUID) {
+        guard let request = pendingRequests.removeValue(forKey: id), ledger.complete(id) else { return }
+        request.continuation.resume(throwing: TranslationError.failed("أُلغي طلب الترجمة قبل عودة النتيجة."))
     }
 
     @available(iOS 18.0, *)
@@ -64,6 +87,8 @@ final class AppleTranslationBridge: TextTranslationService {
         sessionGeneration &+= 1
         let generation = sessionGeneration
         availabilityFailure = nil
+        sessionReady = false
+        statusMessage = "جارٍ تشغيل جلسة Apple Translation…"
 
         let worker = Task { [weak self] in
             guard let self else { return }
@@ -105,6 +130,9 @@ final class AppleTranslationBridge: TextTranslationService {
             }
         }
 
+        sessionReady = true
+        statusMessage = "جلسة Apple Translation جاهزة للترجمة الإنجليزية إلى العربية."
+
         for await request in requestStream {
             guard generation == sessionGeneration, !Task.isCancelled else {
                 // Leave the current stream item available to the replacement
@@ -124,9 +152,13 @@ final class AppleTranslationBridge: TextTranslationService {
                     requestContinuation.yield(request)
                     return
                 }
+                let translatedText = response.targetText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !translatedText.isEmpty else {
+                    throw TranslationError.failed("أعاد Apple Translation نتيجة فارغة؛ لم تُعرض ترجمة وهمية.")
+                }
                 if ledger.complete(request.id) {
                     pendingRequests.removeValue(forKey: request.id)
-                    request.continuation.resume(returning: response.targetText)
+                    request.continuation.resume(returning: translatedText)
                 }
             } catch is CancellationError {
                 ledger.requeue(request.id)

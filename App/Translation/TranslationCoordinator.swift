@@ -6,6 +6,7 @@ import Observation
 final class TranslationCoordinator {
     private(set) var state: TranslationState = .stopped
     private(set) var latestEntry: TranslationEntry?
+    private(set) var recentEntries: [TranslationEntry] = []
     private(set) var lastError: String?
 	private(set) var processedFrames = 0
 	private(set) var skippedFrames = 0
@@ -129,18 +130,23 @@ final class TranslationCoordinator {
 		let task = Task { [weak self] in
             guard let self else { return }
             do {
-                let translated = try await translator.translate(result.text)
-                guard !Task.isCancelled else { return }
+				let translated = try await translator.translate(result.text)
+	                guard !Task.isCancelled else { return }
+	                guard !translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+	                    throw TranslationError.failed("أعاد محرك الترجمة نتيجة فارغة؛ لم تُعرض ترجمة وهمية.")
+	                }
 				self.cache[normalized] = translated
 				self.returnedTranslationCount += 1
 				self.translationStatusMessage = "عادت ترجمة عربية من Apple Translation."
 				self.publish(translated, source: result, generation: generation)
 			} catch {
-                guard !Task.isCancelled else { return }
+	                guard !Task.isCancelled else { return }
 				self.lastError = error.localizedDescription
-				self.translationStatusMessage = "فشلت الترجمة: \(error.localizedDescription)"
-                self.state = .failed(error.localizedDescription)
-            }
+				self.translationStatusMessage = "تعذرت ترجمة النص الحالي: \(error.localizedDescription) سيستمر OCR وستتم إعادة المحاولة عند ظهور نص جديد."
+				// A single unavailable model/session must not stop OCR. Keeping the
+				// coordinator running allows the user to install models or retry without
+				// losing subsequent frames.
+			}
             self.translationTasks[generation] = nil
         }
         translationTasks[generation] = task
@@ -150,7 +156,7 @@ final class TranslationCoordinator {
         // A late translation may finish, but it must never replace a newer one.
         guard generation == nextGeneration, (state == .running || state == .paused) else { return }
         let finished = ContinuousClock.now
-        latestEntry = TranslationEntry(
+		let entry = TranslationEntry(
             sourceText: source.text,
             translatedText: translated,
             metrics: LatencyMetrics(
@@ -160,8 +166,10 @@ final class TranslationCoordinator {
                 translationFinishedAt: finished,
                 displayedAt: ContinuousClock.now
             )
-        )
-    }
+		)
+		latestEntry = entry
+		recentEntries = ([entry] + recentEntries).prefix(6).map { $0 }
+	}
 
     private static func normalize(_ text: String) -> String {
         text.split(whereSeparator: \.isWhitespace).joined(separator: " ").lowercased()

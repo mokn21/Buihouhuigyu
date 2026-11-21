@@ -326,7 +326,7 @@ struct StreamView: View {
 	private var heatWarning: some View {
 		HStack(spacing: 8) {
 			Image(systemName: "thermometer.high")
-			Text("Your phone is getting hot. Switching to 30 fps in settings will help it cool down.")
+				Text("ترتفع حرارة الجهاز. سيساعد اختيار 30 إطارًا/ثانية من الإعدادات على تبريده.")
 		}
 		.font(.subheadline.weight(.semibold))
 		.foregroundStyle(.white)
@@ -459,16 +459,21 @@ struct StreamView: View {
 
 		private func blackTranslationScreen(for session: StreamSession) -> some View {
 			VStack(spacing: 18) {
-				if let entry = session.translationCoordinator.latestEntry {
-					Text(entry.translatedText)
+					if let entry = session.translationCoordinator.latestEntry {
+						Text(entry.translatedText)
 							.font(.system(size: session.settings.translationFontSize + 10, weight: .bold))
 							.multilineTextAlignment(.center)
 							.environment(\.layoutDirection, .rightToLeft)
 							.foregroundStyle(translationColor(session.settings.translationTextColor))
-					Text(entry.sourceText)
-						.font(.system(size: max(14, session.settings.translationFontSize * 0.5)))
-						.foregroundStyle(.secondary)
-					} else {
+						Text(entry.sourceText)
+							.font(.system(size: max(14, session.settings.translationFontSize * 0.5)))
+							.foregroundStyle(.secondary)
+						ForEach(Array(session.translationCoordinator.recentEntries.dropFirst()), id: \.id) { previous in
+							Text(previous.translatedText)
+								.font(.system(size: max(14, session.settings.translationFontSize * 0.68), weight: .medium))
+								.foregroundStyle(translationColor(session.settings.translationTextColor).opacity(0.68))
+								.multilineTextAlignment(.center)
+						} else {
 						ProgressView()
 						Text(session.translationCoordinator.lastError ?? session.translationCoordinator.translationStatusMessage)
 							.foregroundStyle(.secondary)
@@ -499,8 +504,8 @@ struct StreamView: View {
 		case .idle, .connecting:
 			VStack(spacing: 12) {
 				ProgressView().controlSize(.large)
-				Text("Connecting to \(console.name)…").foregroundStyle(.secondary)
-				Button("Cancel") { dismiss() }.buttonStyle(.bordered)
+				Text("جارٍ الاتصال بـ \(console.name)…").foregroundStyle(.secondary)
+					Button("إلغاء") { dismiss() }.buttonStyle(.bordered)
 			}
 		case .streaming:
 			if session.settings.showStats {
@@ -511,14 +516,14 @@ struct StreamView: View {
 			}
 		case .needsPIN(let incorrect):
 			VStack(spacing: 12) {
-				Text(incorrect ? "Incorrect PIN, try again" : "Enter your Remote Play PIN").font(.headline)
-				SecureField("PIN", text: $pin)
+					Text(incorrect ? "رمز PIN غير صحيح، حاول مرة أخرى" : "أدخل رمز PIN الخاص بـ Remote Play").font(.headline)
+					SecureField("رمز PIN", text: $pin)
 					.keyboardType(.numberPad)
 					.textFieldStyle(.roundedBorder)
 					.frame(width: 200)
 				HStack {
-					Button("Cancel") { dismiss() }.buttonStyle(.bordered)
-					Button("OK") {
+						Button("إلغاء") { dismiss() }.buttonStyle(.bordered)
+						Button("موافق") {
 						session.submitPIN(pin)
 						pin = ""
 					}
@@ -530,9 +535,9 @@ struct StreamView: View {
 		case .reconnecting(let attempt):
 			VStack(spacing: 12) {
 				ProgressView().controlSize(.large)
-				Text("Connection lost. Reconnecting…").font(.headline)
-				Text("Attempt \(attempt) of \(StreamSession.maxReconnectAttempts)").foregroundStyle(.secondary)
-				Button("Cancel") { dismiss() }.buttonStyle(.bordered)
+				Text("انقطع الاتصال. جارٍ إعادة الاتصال…").font(.headline)
+				Text("المحاولة \(attempt) من \(StreamSession.maxReconnectAttempts)").foregroundStyle(.secondary)
+				Button("إلغاء") { dismiss() }.buttonStyle(.bordered)
 			}
 			.padding(24)
 			.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
@@ -542,11 +547,11 @@ struct StreamView: View {
 					Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundStyle(.yellow)
 					Text(error).multilineTextAlignment(.center).frame(maxWidth: 420)
 				} else {
-					Text("Disconnected")
+						Text("تم قطع الاتصال")
 				}
 				HStack {
-					Button("Close") { dismiss() }.buttonStyle(.bordered)
-					Button("Reconnect") { session.reconnect() }.buttonStyle(.borderedProminent)
+						Button("إغلاق") { dismiss() }.buttonStyle(.bordered)
+						Button("إعادة الاتصال") { session.reconnect() }.buttonStyle(.borderedProminent)
 				}
 			}
 			.padding(24)
@@ -559,14 +564,14 @@ struct StreamView: View {
 			Color.black.opacity(0.85).ignoresSafeArea()
 			VStack(spacing: 8) {
 				Image(systemName: "gamecontroller.fill").font(.largeTitle)
-				Text("Connect a controller").font(.title2.bold())
-				Text("Orion Subtitles has no on-screen controls. Turn on your controller or pair it in Settings › Bluetooth, and \(console.name) connects as soon as it's found.")
+					Text("وصّل وحدة تحكم").font(.title2.bold())
+					Text("لا يحتوي Orion Subtitles على أزرار تحكم على الشاشة. شغّل وحدة التحكم أو اقترن بها من إعدادات Bluetooth، وسيتصل \(console.name) عند العثور عليها.")
 					.multilineTextAlignment(.center)
 					.foregroundStyle(.secondary)
 					.frame(maxWidth: 420)
 				HStack {
-					Button("Cancel") { dismiss() }.buttonStyle(.bordered)
-					Button("Connect anyway") {
+						Button("إلغاء") { dismiss() }.buttonStyle(.bordered)
+						Button("الاتصال رغم ذلك") {
 						needsController = false
 						update()
 					}
@@ -583,10 +588,10 @@ struct StreamView: View {
 			Color.black.opacity(0.85).ignoresSafeArea()
 			VStack(spacing: 8) {
 				Image(systemName: "rotate.right").font(.largeTitle)
-				Text("Turn your phone sideways").font(.title2.bold())
-				Text(session == nil ? "\(console.name) connects once you're in landscape." : "Turn to landscape to keep playing.")
+					Text("أدر iPad إلى الوضع الأفقي").font(.title2.bold())
+					Text(session == nil ? "سيتصل \(console.name) عند تدوير iPad أفقيًا." : "أدر iPad أفقيًا لمتابعة اللعب.")
 					.foregroundStyle(.secondary)
-				Button(session == nil ? "Cancel" : "Disconnect") { dismiss() }.buttonStyle(.bordered).padding(.top, 8)
+					Button(session == nil ? "إلغاء" : "قطع الاتصال") { dismiss() }.buttonStyle(.bordered).padding(.top, 8)
 			}
 		}
 	}
@@ -597,11 +602,11 @@ struct StreamView: View {
 			VStack(spacing: 8) {
 				Image(systemName: "rectangle.portrait.and.arrow.forward").font(.largeTitle)
 				if session == nil {
-					Text("Open your phone to play").font(.title2.bold())
-					Text("\(console.name) connects as soon as you unfold.").foregroundStyle(.secondary)
+						Text("افتح iPad لمتابعة اللعب").font(.title2.bold())
+						Text("سيتصل \(console.name) عند فتح الجهاز.").foregroundStyle(.secondary)
 					HStack {
-						Button("Cancel") { dismiss() }.buttonStyle(.bordered)
-						Button("Play here anyway") {
+							Button("إلغاء") { dismiss() }.buttonStyle(.bordered)
+							Button("اللعب هنا رغم ذلك") {
 							log.notice("Play here anyway at \(Int(windowSize.width), privacy: .public)x\(Int(windowSize.height), privacy: .public)pt")
 							playHereAnyway = true
 							update()
@@ -610,9 +615,9 @@ struct StreamView: View {
 					}
 					.padding(.top, 8)
 				} else {
-					Text("Paused").font(.title2.bold())
-					Text("Unfold to keep playing.").foregroundStyle(.secondary)
-					Button("Disconnect") { dismiss() }.buttonStyle(.bordered).padding(.top, 8)
+						Text("متوقف مؤقتًا").font(.title2.bold())
+						Text("افتح الجهاز لمتابعة اللعب.").foregroundStyle(.secondary)
+						Button("قطع الاتصال") { dismiss() }.buttonStyle(.bordered).padding(.top, 8)
 				}
 			}
 		}
@@ -623,17 +628,17 @@ struct StreamView: View {
 		return NavigationStack {
 			Form {
 				Section {
-					Button("Resume") { showMenu = false }
-					Button("Put console in rest mode") {
+					Button("متابعة") { showMenu = false }
+					Button("وضع الجهاز في وضع السكون") {
 						session?.putConsoleToSleep()
 						showMenu = false
 					}
-					Button("Disconnect", role: .destructive) {
+					Button("قطع الاتصال", role: .destructive) {
 						showMenu = false
 						dismiss()
 					}
 				}
-				Section("Arabic translation") {
+				Section("الترجمة العربية") {
 					Toggle("شاشة الترجمة السوداء", isOn: $blackTranslationMode)
 					Button("اختبار الترجمة") {
 						showMenu = false
@@ -654,7 +659,7 @@ struct StreamView: View {
 							session?.translationCoordinator.start()
 						}
 					}
-					Button("Stop translation", role: .destructive) {
+					Button("إيقاف الترجمة", role: .destructive) {
 						session?.translationCoordinator.stop()
 					}
 					if let error = session?.translationCoordinator.lastError {
@@ -673,10 +678,10 @@ struct StreamView: View {
 						Label("Temperature", systemImage: "thermometer.medium")
 					}
 					if phone.isHot && store.settings.fps > 30 {
-						Button("Switch to 30 fps to cool down") { store.settings.fps = 30 }
+						Button("التبديل إلى 30 إطارًا/ثانية لتبريد الجهاز") { store.settings.fps = 30 }
 					}
 				} header: {
-					Text("Phone")
+					Text("الجهاز")
 				}
 				StreamSettingsForm(settings: $store.settings)
 			}
@@ -721,8 +726,8 @@ private struct KeyboardOverlay: View {
 
 	var body: some View {
 		VStack(spacing: 12) {
-			Text("Type on your iPad").font(.headline)
-			TextField("Text", text: $text)
+			Text("اكتب على iPad").font(.headline)
+				TextField("النص", text: $text)
 				.textFieldStyle(.roundedBorder)
 				.textInputAutocapitalization(.never)
 				.autocorrectionDisabled()
@@ -731,8 +736,8 @@ private struct KeyboardOverlay: View {
 				.onSubmit { onSubmit(text) }
 				.frame(maxWidth: 520)
 			HStack {
-				Button("Cancel", action: onCancel).buttonStyle(.bordered)
-				Button("Send") { onSubmit(text) }.buttonStyle(.borderedProminent)
+					Button("إلغاء", action: onCancel).buttonStyle(.bordered)
+					Button("إرسال") { onSubmit(text) }.buttonStyle(.borderedProminent)
 			}
 		}
 		.padding(20)
