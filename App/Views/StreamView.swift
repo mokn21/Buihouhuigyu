@@ -29,6 +29,7 @@ struct StreamView: View {
 	@State private var pin = ""
 	@State private var phone = PhoneStatus()
 	@State private var showHeatWarning = false
+	@State private var blackTranslationMode = false
 	/// The corner hints show once per stream screen, not again after a reconnect
 	@State private var hintShown = false
 
@@ -80,7 +81,9 @@ struct StreamView: View {
 		ZStack {
 			Color.black.ignoresSafeArea()
 
-			if let session, let renderer = session.renderer {
+				if blackTranslationMode, let session {
+					blackTranslationScreen(for: session)
+				} else if let session, let renderer = session.renderer {
 				MetalStreamView(
 					renderer: renderer,
 					highRefresh: session.settings.highRefreshDisplay,
@@ -331,24 +334,46 @@ struct StreamView: View {
 		private func translationOverlay(for session: StreamSession) -> some View {
 			if let entry = session.translationCoordinator.latestEntry,
 			   session.translationCoordinator.state == .running || session.translationCoordinator.state == .paused {
-				VStack(spacing: 4) {
+				GeometryReader { geo in
+					VStack(spacing: 4) {
+						Text(entry.translatedText)
+							.font(.system(size: session.settings.translationFontSize, weight: .semibold))
+							.multilineTextAlignment(.center)
+							.environment(\.layoutDirection, .rightToLeft)
+						Text(entry.sourceText)
+							.font(.system(size: max(12, session.settings.translationFontSize * 0.45)))
+							.foregroundStyle(.white.opacity(0.7))
+					}
+					.foregroundStyle(.white)
+					.padding(.horizontal, 18)
+					.padding(.vertical, 10)
+					.background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 14))
+					.frame(maxWidth: min(geo.size.width - 80, 900))
+					.position(x: geo.size.width / 2, y: geo.size.height * session.settings.translationPositionY)
+				}
+				.allowsHitTesting(false)
+			}
+		}
+
+		private func blackTranslationScreen(for session: StreamSession) -> some View {
+			VStack(spacing: 18) {
+				if let entry = session.translationCoordinator.latestEntry {
 					Text(entry.translatedText)
-						.font(.title3.weight(.semibold))
+						.font(.system(size: session.settings.translationFontSize + 10, weight: .bold))
 						.multilineTextAlignment(.center)
 						.environment(\.layoutDirection, .rightToLeft)
 					Text(entry.sourceText)
-						.font(.caption)
-						.foregroundStyle(.white.opacity(0.7))
+						.font(.system(size: max(14, session.settings.translationFontSize * 0.5)))
+						.foregroundStyle(.secondary)
+				} else {
+					ProgressView()
+					Text("بانتظار نص من بث Remote Play…").foregroundStyle(.secondary)
 				}
-				.foregroundStyle(.white)
-				.padding(.horizontal, 18)
-				.padding(.vertical, 10)
-				.background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 14))
-				.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-				.padding(.horizontal, 40)
-				.padding(.bottom, 28)
-				.allowsHitTesting(false)
 			}
+			.frame(maxWidth: .infinity, maxHeight: .infinity)
+			.padding(40)
+			.background(Color.black.ignoresSafeArea())
+			.environment(\.layoutDirection, .rightToLeft)
 		}
 
 		// MARK: - Overlays
@@ -494,6 +519,7 @@ struct StreamView: View {
 					}
 				}
 				Section("Arabic translation") {
+					Toggle("شاشة الترجمة السوداء", isOn: $blackTranslationMode)
 					Button(session?.translationCoordinator.state == .running ? "Pause translation" : "Start translation") {
 						if session?.translationCoordinator.state == .running {
 							session?.translationCoordinator.pause()

@@ -68,7 +68,8 @@ struct SettingsView: View {
 		@Bindable var store = store
 		NavigationStack {
 			Form {
-				StreamSettingsForm(settings: $store.settings)
+					StreamSettingsForm(settings: $store.settings)
+					TranslationSettingsForm(settings: $store.settings)
 
 				Section {
 					ShareLink(
@@ -91,6 +92,57 @@ struct SettingsView: View {
 			.toolbar {
 				ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
 			}
+		}
+	}
+}
+
+private struct TranslationSettingsForm: View {
+	@Binding var settings: StreamSettings
+
+	var body: some View {
+		Section {
+			Picker("لغة النص الأصلي", selection: $settings.translationSourceLanguage) {
+				Text("الكشف التلقائي").tag("auto")
+				Text("الإنجليزية").tag("en-US")
+				Text("الإنجليزية البريطانية").tag("en-GB")
+			}
+			Picker("لغة الترجمة", selection: $settings.translationTargetLanguage) {
+				Text("العربية").tag("ar")
+			}
+			VStack(alignment: .leading) {
+				HStack { Text("حجم الخط"); Spacer(); Text("\(Int(settings.translationFontSize))") }
+				Slider(value: $settings.translationFontSize, in: 16...64, step: 1)
+			}
+			VStack(alignment: .leading) {
+				HStack { Text("مكان الترجمة العمودي"); Spacer(); Text("\(Int(settings.translationPositionY * 100))٪") }
+				Slider(value: $settings.translationPositionY, in: 0.15...0.92)
+			}
+			VStack(alignment: .leading) {
+				HStack { Text("الفاصل بين فحوص OCR"); Spacer(); Text("\(settings.translationIntervalMs) مللي ثانية") }
+				Slider(value: Binding(get: { Double(settings.translationIntervalMs) }, set: { settings.translationIntervalMs = Int($0) }), in: 150...1000, step: 50)
+			}
+			Text("منطقة الالتقاط — اسحب القيم لتحديد المستطيل داخل إطار Remote Play")
+			RegionSlider(title: "أفقيًا", value: $settings.translationRegion.x, range: 0...0.9)
+			RegionSlider(title: "عموديًا", value: $settings.translationRegion.y, range: 0...0.9)
+			RegionSlider(title: "العرض", value: $settings.translationRegion.width, range: 0.1...1)
+			RegionSlider(title: "الارتفاع", value: $settings.translationRegion.height, range: 0.1...1)
+		} header: {
+			Text("الترجمة")
+		} footer: {
+			Text("تُحفظ هذه الإعدادات وتُطبق على OCR والبث التالي. الترجمة العربية تستخدم Apple Translation عندما يدعمها إصدار iPadOS.")
+		}
+	}
+}
+
+private struct RegionSlider: View {
+	let title: String
+	@Binding var value: Double
+	let range: ClosedRange<Double>
+
+	var body: some View {
+		VStack(alignment: .leading, spacing: 2) {
+			HStack { Text(title); Spacer(); Text(String(format: "%.0f%%", value * 100)).foregroundStyle(.secondary) }
+			Slider(value: $value, in: range)
 		}
 	}
 }

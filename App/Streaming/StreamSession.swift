@@ -68,6 +68,9 @@ final class StreamSession {
 		self.console = console
 		self.settings = settings
 		self.renderer = MetalRenderer()
+		self.translationCoordinator.region = settings.translationRegion
+		self.translationCoordinator.sourceLanguage = settings.translationSourceLanguage
+		self.translationCoordinator.minimumFrameInterval = .milliseconds(settings.translationIntervalMs)
 	}
 
 	deinit {
@@ -227,6 +230,9 @@ final class StreamSession {
 			new.resolution != settings.resolution || new.fps != settings.fps || new.bitrateMbps != settings.bitrateMbps
 			|| new.effectiveCodec != settings.effectiveCodec || new.hdr != settings.hdr
 		settings = new
+		translationCoordinator.region = new.translationRegion
+		translationCoordinator.sourceLanguage = new.translationSourceLanguage
+		translationCoordinator.minimumFrameInterval = .milliseconds(new.translationIntervalMs)
 		input.selectIsTouchpad = new.selectIsTouchpad
 		input.rumble.enabled = new.rumble
 		renderer?.setDisplayMode(new.displayMode)

@@ -13,19 +13,25 @@ final class TranslationCoordinator {
     var region: CaptureRegion = .fullScreen {
         didSet { ocr.region = region }
     }
+    var sourceLanguage = "en-US" {
+        didSet { ocr.sourceLanguage = sourceLanguage }
+    }
     var minimumFrameInterval: Duration = .milliseconds(250)
 
     private let ocr: OCRService
     private let translator: TextTranslationService
-    private var task: Task<Void, Never>?
+    private var ocrTask: Task<Void, Never>?
+    private var translationTasks: [UInt64: Task<Void, Never>] = [:]
     private var lastSubmittedAt: ContinuousClock.Instant?
     private var lastSourceText = ""
+    private var nextGeneration: UInt64 = 0
     private var cache: [String: String] = [:]
 
     let appleTranslationBridge: AnyObject?
 
     init(ocr: OCRService = OCRService(), translator: TextTranslationService? = nil) {
         self.ocr = ocr
+        self.ocr.sourceLanguage = "en-US"
 #if canImport(SwiftUI) && canImport(Translation)
         if #available(iOS 18.0, *) {
             let bridge = AppleTranslationBridge()
@@ -42,21 +48,23 @@ final class TranslationCoordinator {
     }
 
     func start() {
-        task?.cancel()
-        task = nil
+        ocrTask?.cancel()
+        ocrTask = nil
         lastError = nil
         state = .running
     }
 
     func pause() {
-        task?.cancel()
-        task = nil
+        ocrTask?.cancel()
+        ocrTask = nil
         state = .paused
     }
 
     func stop() {
-        task?.cancel()
-        task = nil
+        ocrTask?.cancel()
+        ocrTask = nil
+        translationTasks.values.forEach { $0.cancel() }
+        translationTasks.removeAll()
         state = .stopped
         lastSourceText = ""
     }
@@ -72,46 +80,67 @@ final class TranslationCoordinator {
             return
         }
         lastSubmittedAt = now
-        task?.cancel()
+
+        // Only OCR is replaced by a newer frame. A translation already in
+        // progress is allowed to finish; its generation controls visibility.
+        ocrTask?.cancel()
         let ocr = self.ocr
-        let translator = self.translator
-        task = Task { [weak self] in
+        ocrTask = Task { [weak self] in
             guard let self else { return }
             guard let result = await ocr.recognize(pixelBuffer: pixelBuffer, capturedAt: now), !Task.isCancelled else { return }
-            let normalized = Self.normalize(result.text)
-            guard !normalized.isEmpty, normalized != self.lastSourceText else {
-                self.skippedFrames += 1
-                return
-            }
-            self.lastSourceText = normalized
-            self.processedFrames += 1
-            let translated: String
-            if let cached = self.cache[normalized] {
-                translated = cached
-            } else {
-                do {
-                    translated = try await translator.translate(result.text)
-                    guard !Task.isCancelled else { return }
-                    self.cache[normalized] = translated
-                } catch {
-                    self.lastError = error.localizedDescription
-                    self.state = .failed(error.localizedDescription)
-                    return
-                }
-            }
-            let finished = ContinuousClock.now
-            self.latestEntry = TranslationEntry(
-                sourceText: result.text,
-                translatedText: translated,
-                metrics: LatencyMetrics(
-                    capturedAt: result.capturedAt,
-                    ocrStartedAt: result.startedAt,
-                    ocrFinishedAt: result.finishedAt,
-                    translationFinishedAt: finished,
-                    displayedAt: ContinuousClock.now
-                )
-            )
+            self.acceptOCR(result)
         }
+    }
+
+    private func acceptOCR(_ result: OCRResult) {
+        let normalized = Self.normalize(result.text)
+        guard !normalized.isEmpty, normalized != lastSourceText else {
+            skippedFrames += 1
+            return
+        }
+        lastSourceText = normalized
+        processedFrames += 1
+        nextGeneration &+= 1
+        let generation = nextGeneration
+        let translator = self.translator
+
+        if let cached = cache[normalized] {
+            publish(cached, source: result, generation: generation)
+            return
+        }
+
+        let task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let translated = try await translator.translate(result.text)
+                guard !Task.isCancelled else { return }
+                self.cache[normalized] = translated
+                self.publish(translated, source: result, generation: generation)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.lastError = error.localizedDescription
+                self.state = .failed(error.localizedDescription)
+            }
+            self.translationTasks[generation] = nil
+        }
+        translationTasks[generation] = task
+    }
+
+    private func publish(_ translated: String, source: OCRResult, generation: UInt64) {
+        // A late translation may finish, but it must never replace a newer one.
+        guard generation == nextGeneration, (state == .running || state == .paused) else { return }
+        let finished = ContinuousClock.now
+        latestEntry = TranslationEntry(
+            sourceText: source.text,
+            translatedText: translated,
+            metrics: LatencyMetrics(
+                capturedAt: source.capturedAt,
+                ocrStartedAt: source.startedAt,
+                ocrFinishedAt: source.finishedAt,
+                translationFinishedAt: finished,
+                displayedAt: ContinuousClock.now
+            )
+        )
     }
 
     private static func normalize(_ text: String) -> String {

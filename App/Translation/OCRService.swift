@@ -12,12 +12,13 @@ struct OCRResult: Equatable {
 final class OCRService {
     var recognitionLevel: VNRequestTextRecognitionLevel = .fast
     var region: CaptureRegion = .fullScreen
+    var sourceLanguage = "en-US"
 
     func recognize(pixelBuffer: CVPixelBuffer, capturedAt: ContinuousClock.Instant = ContinuousClock.now) async -> OCRResult? {
         let startedAt = ContinuousClock.now
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = recognitionLevel
-        request.recognitionLanguages = ["en-US", "en-GB"]
+        request.recognitionLanguages = sourceLanguage == "auto" ? [] : [sourceLanguage]
         request.usesLanguageCorrection = false
         request.regionOfInterest = region.cgRect
 

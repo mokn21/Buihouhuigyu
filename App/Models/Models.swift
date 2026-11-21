@@ -110,6 +110,12 @@ struct StreamSettings: Codable, Equatable {
 	var selectIsTouchpad: Bool = false
 	/// Keep a ProMotion screen at 120 Hz while streaming, so frames wait less for the next refresh
 	var highRefreshDisplay: Bool = true
+	var translationSourceLanguage: String = "en-US"
+	var translationTargetLanguage: String = "ar"
+	var translationRegion: CaptureRegion = .fullScreen
+	var translationFontSize: Double = 28
+	var translationPositionY: Double = 0.88
+	var translationIntervalMs: Int = 250
 
 	/// HDR needs HEVC
 	var effectiveCodec: VideoCodecChoice { hdr ? .h265 : codec }
@@ -132,6 +138,12 @@ struct StreamSettings: Codable, Equatable {
 		rumble = try c.decodeIfPresent(Bool.self, forKey: .rumble) ?? d.rumble
 		selectIsTouchpad = try c.decodeIfPresent(Bool.self, forKey: .selectIsTouchpad) ?? d.selectIsTouchpad
 		highRefreshDisplay = try c.decodeIfPresent(Bool.self, forKey: .highRefreshDisplay) ?? d.highRefreshDisplay
+		translationSourceLanguage = try c.decodeIfPresent(String.self, forKey: .translationSourceLanguage) ?? d.translationSourceLanguage
+		translationTargetLanguage = try c.decodeIfPresent(String.self, forKey: .translationTargetLanguage) ?? d.translationTargetLanguage
+		translationRegion = try c.decodeIfPresent(CaptureRegion.self, forKey: .translationRegion) ?? d.translationRegion
+		translationFontSize = try c.decodeIfPresent(Double.self, forKey: .translationFontSize) ?? d.translationFontSize
+		translationPositionY = try c.decodeIfPresent(Double.self, forKey: .translationPositionY) ?? d.translationPositionY
+		translationIntervalMs = try c.decodeIfPresent(Int.self, forKey: .translationIntervalMs) ?? d.translationIntervalMs
 	}
 }
 
