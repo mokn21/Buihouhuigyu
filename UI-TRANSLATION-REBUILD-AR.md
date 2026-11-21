@@ -2,11 +2,23 @@
 
 ## النسخة
 
-- Commit التنفيذ: `b1a7cc6`
-- Workflow: [44945971260](https://github.com/mokn21/Buihouhuigyu/actions/runs/44945971260)
+- آخر Commit: `0953fcb` — إصلاح استخراج UUID لجهاز iPad Simulator في Workflow
+- Workflow الأخير: [44953774047](https://github.com/mokn21/Buihouhuigyu/actions/runs/44953774047)
 - الاختبارات الآلية: 3 اختبارات، 0 فشل
 - البناء: نجح
 - فحص IPA: `UIDeviceFamily=[2]` وBundle ID صالح `com.orion.subtitles`
+
+### سبب Error Code 64 السابق
+
+ظهر `Error Code 64` لأن Workflow كان يكتشف كلمة `iPad` في مخرجات `simctl`، لكنه يستخرج UUID فارغًا، ثم يمرر destination غير صالحًا بصيغة `id=`. تم إصلاح ذلك بقراءة قائمة الأجهزة بصيغة JSON واختيار UUID لجهاز iPad متاح فقط، مع استخدام fallback عند عدم وجود جهاز صالح.
+
+في Workflow الأخير شُغّلت XCTest فعلية على iPad Simulator؛ لم يعد الأمر يتوقف عند `build-for-testing` فقط. النتيجة: `TranslationRequestLedgerTests` نفذت 3 اختبارات ونجحت جميعها، ثم ظهر `** TEST SUCCEEDED **`.
+
+### IPA الأخيرة
+
+الملف الناتج من Workflow الأخير هو `Orion-Subtitles.ipa`. فحصه محليًا أعاد:
+
+`PASS: iPad-only IPA: UIDeviceFamily=[2], name=Orion Subtitles, valid Bundle ID=com.orion.subtitles`
 
 ## ما تم تنفيذه في هذه الدفعة
 
