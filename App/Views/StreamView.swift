@@ -28,6 +28,8 @@ struct StreamView: View {
 	@State private var showPSButton = false
 	@State private var showTranslationDiagnostics = false
 	@State private var showRegionEditor = false
+	@State private var showQuickBar = false
+	@State private var quickBarHideTask: Task<Void, Never>?
 	@State private var hidePSButton: Task<Void, Never>?
 	@State private var pin = ""
 	@State private var phone = PhoneStatus()
@@ -60,7 +62,10 @@ struct StreamView: View {
 		.defersSystemGestures(on: .all)
 		// The session itself starts from updateFolded, once we know we're on a usable screen
 		.onAppear { AppDelegate.setStreaming(true) }
-		.onDisappear(perform: stop)
+		.onDisappear {
+			quickBarHideTask?.cancel()
+			stop()
+		}
 		.onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
 			// A flip between the two landscapes keeps the same window size, so pick
 			// up iOS's new orientation (for controller motion) once it has rotated
@@ -85,8 +90,7 @@ struct StreamView: View {
 			.onChange(of: scenePhase) { _, phase in
 			session?.setPaused(phase != .active || folded || portrait)
 		}
-				.sheet(isPresented: $showMenu) { menu }
-				.sheet(isPresented: $showTranslationDiagnostics) {
+					.sheet(isPresented: $showTranslationDiagnostics) {
 					if let session {
 						TranslationDiagnosticsView(coordinator: session.translationCoordinator, bridge: session.translationCoordinator.appleTranslationBridge)
 					}
@@ -119,9 +123,9 @@ struct StreamView: View {
 					renderer: renderer,
 					highRefresh: session.settings.highRefreshDisplay,
 						onTouch: { _ in },
-						onTap: { _ in showMenu = true },
-						onCornerTap: { showMenu = true },
-						onLeftCornerTap: { showMenu = true }
+							onTap: { _ in revealQuickBar() },
+							onCornerTap: { revealQuickBar() },
+							onLeftCornerTap: { revealQuickBar() }
 				)
 				.ignoresSafeArea()
 			}
@@ -146,12 +150,17 @@ struct StreamView: View {
 					.transition(.opacity)
 			}
 
-			if showHeatWarning {
-				heatWarning
-					.transition(.opacity)
-			}
+				if showHeatWarning {
+					heatWarning
+						.transition(.opacity)
+				}
 
-			if let session, let text = session.keyboardText, !folded, !portrait {
+				if showQuickBar, let session {
+					quickToolbar(for: session)
+						.transition(.move(edge: .top).combined(with: .opacity))
+				}
+
+				if let session, let text = session.keyboardText, !folded, !portrait {
 				KeyboardOverlay(
 					initialText: text,
 					onChange: { session.keyboardChanged($0) },
@@ -344,11 +353,72 @@ struct StreamView: View {
 			.background(.black.opacity(0.55), in: Circle())
 	}
 
+	private func revealQuickBar() {
+		withAnimation(.easeOut(duration: 0.2)) { showQuickBar = true }
+		quickBarHideTask?.cancel()
+		quickBarHideTask = Task { @MainActor in
+			try? await Task.sleep(for: .seconds(8))
+			guard !Task.isCancelled else { return }
+			withAnimation(.easeIn(duration: 0.25)) { showQuickBar = false }
+		}
+	}
+
+	private func quickToolbar(for session: StreamSession) -> some View {
+		HStack(spacing: 8) {
+			quickTool("عرض", icon: blackTranslationMode ? "rectangle.fill" : "play.tv") {
+				blackTranslationMode.toggle()
+				session.setTranslationBlackMode(blackTranslationMode)
+			}
+			quickTool("كتم", icon: blackTranslationMode ? "speaker.slash.fill" : "speaker.wave.2.fill") {
+				blackTranslationMode.toggle()
+				session.setTranslationBlackMode(blackTranslationMode)
+			}
+			quickTool("OCR", icon: session.translationCoordinator.state == .running ? "text.viewfinder" : "text.viewfinder.slash") {
+				if session.translationCoordinator.state == .running {
+					session.translationCoordinator.pause()
+				} else {
+					session.translationCoordinator.start()
+				}
+			}
+			quickTool("منطقة", icon: "crop") {
+				showRegionEditor = true
+			}
+			quickTool("اختبار", icon: "checkmark.seal") {
+				showTranslationDiagnostics = true
+			}
+			quickTool("مظهر", icon: "circle.lefthalf.filled") {
+				let themes = TranslationTheme.allCases
+				if let index = themes.firstIndex(of: settingsStore.settings.translationTheme) {
+					settingsStore.settings.translationTheme = themes[(index + 1) % themes.count]
+				}
+			}
+		}
+		.padding(.horizontal, 12)
+		.padding(.vertical, 9)
+		.background(.black.opacity(0.88), in: RoundedRectangle(cornerRadius: 16))
+		.foregroundStyle(.white)
+		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+		.padding(.top, 12)
+		.padding(.horizontal, 12)
+		.ignoresSafeArea()
+	}
+
+	private func quickTool(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+		Button(action: action) {
+			VStack(spacing: 3) {
+				Image(systemName: icon).font(.headline)
+				Text(title).font(.caption2)
+			}
+			.frame(minWidth: 52, minHeight: 42)
+		}
+		.buttonStyle(.plain)
+	}
+
 	private var menuButton: some View {
 		Button {
 			hideMenuButton?.cancel()
 			showMenuButton = false
-			showMenu = true
+			revealQuickBar()
 		} label: {
 			Image(systemName: "gearshape.fill")
 				.font(.title2)
@@ -398,10 +468,12 @@ struct StreamView: View {
 					Text(entry.sourceText)
 						.font(.system(size: max(14, session.settings.translationFontSize * 0.5)))
 						.foregroundStyle(.secondary)
-				} else {
-					ProgressView()
-					Text("بانتظار نص من بث Remote Play…").foregroundStyle(.secondary)
-				}
+					} else {
+						ProgressView()
+						Text(session.translationCoordinator.lastError ?? session.translationCoordinator.translationStatusMessage)
+							.foregroundStyle(.secondary)
+							.multilineTextAlignment(.center)
+					}
 			}
 			.frame(maxWidth: .infinity, maxHeight: .infinity)
 			.padding(40)

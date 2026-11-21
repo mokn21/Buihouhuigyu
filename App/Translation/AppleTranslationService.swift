@@ -91,6 +91,20 @@ final class AppleTranslationBridge: TextTranslationService {
             ? "نماذج ترجمة English إلى العربية جاهزة."
             : "نماذج ترجمة English إلى العربية غير مثبتة؛ سيطلب النظام تنزيلها."
 
+        if availability == .supported {
+            do {
+                statusMessage = "جارٍ طلب تنزيل نماذج English إلى العربية…"
+                try await session.prepareTranslation()
+                statusMessage = "تم تنزيل نماذج English إلى العربية وأصبحت جاهزة."
+            } catch {
+                let failure = TranslationError.failed("تعذر تنزيل نماذج Apple Translation. وافق على التنزيل وتحقق من اتصال الإنترنت ثم حاول مرة أخرى.")
+                availabilityFailure = failure
+                statusMessage = failure.localizedDescription
+                failPending(with: failure)
+                return
+            }
+        }
+
         for await request in requestStream {
             guard generation == sessionGeneration, !Task.isCancelled else {
                 // Leave the current stream item available to the replacement
