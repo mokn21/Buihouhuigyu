@@ -39,6 +39,14 @@ jobs:
           git submodule status --recursive
           echo "PASS: project files and recursive submodule dependencies are available."
 
+      - name: Run translation request management tests
+        run: |
+          set -euo pipefail
+          xcodegen generate
+          xcodebuild -project OrionSubtitles.xcodeproj -scheme OrionSubtitlesTests \
+            -destination 'platform=iOS Simulator,name=iPad (10th generation)' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test
+
       - name: Build unsigned iPad IPA
         env:
           VERSION: 0.1.0
