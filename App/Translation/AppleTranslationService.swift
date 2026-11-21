@@ -1,31 +1,11 @@
 import Foundation
 
-#if canImport(Translation)
-import Translation
-
-/// Local, on-device translation. iPadOS 17.4 provides the framework; the
-/// single-string API is guarded at iPadOS 18 because that is its documented
-/// availability in the current SDK.
-@available(iOS 18.0, iPadOS 18.0, *)
-struct AppleTranslationService: TextTranslationService {
-    func translate(_ text: String) async throws -> String {
-        let session = TranslationSession(
-            installedSource: Locale.Language(identifier: "en"),
-            target: Locale.Language(identifier: "ar")
-        )
-        let response = try await session.translate(text)
-        return response.targetText
-    }
-}
-#endif
-
+/// Apple Translation is intentionally kept behind this protocol. Its public
+/// custom-session flow is supplied by SwiftUI's translationTask modifier, so a
+/// headless translation service must not construct an unsupported session or
+/// silently substitute a server API.
 struct DefaultTranslationService: TextTranslationService {
     func translate(_ text: String) async throws -> String {
-        #if canImport(Translation)
-        if #available(iOS 18.0, iPadOS 18.0, *) {
-            return try await AppleTranslationService().translate(text)
-        }
-        #endif
-        throw TranslationError.unavailable("الترجمة المحلية تتطلب iPadOS 18 أو أحدث.")
+        throw TranslationError.unavailable("يلزم ربط Apple Translation عبر واجهة iPadOS المدعومة قبل تشغيل الترجمة العربية.")
     }
 }

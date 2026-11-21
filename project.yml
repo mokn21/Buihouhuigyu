@@ -15,6 +15,7 @@ targets:
     platform: iOS
     sources:
       - App
+      - App/Views/TranslationModesView.swift
     dependencies:
       - framework: Frameworks/ChiakiKit.xcframework
         embed: false

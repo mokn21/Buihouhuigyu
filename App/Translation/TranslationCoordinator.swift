@@ -2,7 +2,6 @@ import CoreVideo
 import Foundation
 import Observation
 
-@MainActor
 @Observable
 final class TranslationCoordinator {
     private(set) var state: TranslationState = .stopped
