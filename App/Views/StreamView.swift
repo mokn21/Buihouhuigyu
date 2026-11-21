@@ -1,5 +1,8 @@
 import GameController
 import SwiftUI
+#if canImport(Translation)
+import Translation
+#endif
 
 struct StreamView: View {
 	let console: Console
@@ -69,8 +72,9 @@ struct StreamView: View {
 		.onChange(of: scenePhase) { _, phase in
 			session?.setPaused(phase != .active || folded || portrait)
 		}
-		.sheet(isPresented: $showMenu) { menu }
-	}
+			.sheet(isPresented: $showMenu) { menu }
+			.modifier(AppleTranslationTaskModifier(bridge: session?.translationCoordinator.appleTranslationBridge))
+		}
 
 	private var content: some View {
 		ZStack {

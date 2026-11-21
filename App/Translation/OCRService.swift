@@ -37,7 +37,7 @@ final class OCRService {
     }
 }
 
-protocol TextTranslationService: Sendable {
+protocol TextTranslationService {
     func translate(_ text: String) async throws -> String
 }
 

@@ -22,9 +22,23 @@ final class TranslationCoordinator {
     private var lastSourceText = ""
     private var cache: [String: String] = [:]
 
-    init(ocr: OCRService = OCRService(), translator: TextTranslationService = DefaultTranslationService()) {
+    let appleTranslationBridge: AppleTranslationBridge?
+
+    init(ocr: OCRService = OCRService(), translator: TextTranslationService? = nil) {
         self.ocr = ocr
-        self.translator = translator
+#if canImport(SwiftUI) && canImport(Translation)
+        if #available(iOS 17.4, *) {
+            let bridge = AppleTranslationBridge()
+            self.appleTranslationBridge = bridge
+            self.translator = translator ?? bridge
+        } else {
+            self.appleTranslationBridge = nil
+            self.translator = translator ?? DefaultTranslationService()
+        }
+#else
+        self.appleTranslationBridge = nil
+        self.translator = translator ?? DefaultTranslationService()
+#endif
     }
 
     func start() {
