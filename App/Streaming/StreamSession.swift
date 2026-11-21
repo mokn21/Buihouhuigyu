@@ -47,6 +47,8 @@ final class StreamSession {
 	private(set) var settings: StreamSettings
 
 	@ObservationIgnored let renderer: MetalRenderer?
+	/// OCR observes the decoded Remote Play frame; it never captures another app's screen.
+	let translationCoordinator = TranslationCoordinator()
 	@ObservationIgnored let input = ControllerInput()
 	@ObservationIgnored private let audio = AudioOutput()
 	@ObservationIgnored private var decoder: VideoDecoder?
@@ -87,7 +89,13 @@ final class StreamSession {
 
 		let codec = settings.effectiveCodec
 		let decoder = VideoDecoder(hevc: codec == .h265, tenBit: settings.hdr)
-		decoder.onFrame = { [weak renderer] frame in renderer?.display(frame) }
+			decoder.onFrame = { [weak renderer, weak self] frame in
+				renderer?.display(frame)
+				guard let self else { return }
+				Task { @MainActor in
+					self.translationCoordinator.submit(pixelBuffer: frame)
+				}
+			}
 		self.decoder = decoder
 		renderer.configure(hdr: settings.hdr, displayMode: settings.displayMode, bicubic: settings.sharpUpscaling)
 		renderer.setPaused(paused)

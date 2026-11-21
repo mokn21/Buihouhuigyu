@@ -88,9 +88,10 @@ struct StreamView: View {
 				.ignoresSafeArea()
 			}
 
-			if let session {
-				overlay(for: session)
-			}
+				if let session {
+					overlay(for: session)
+					translationOverlay(for: session)
+				}
 
 			if showSettingsHint && !showMenuButton {
 				settingsHint
@@ -144,12 +145,14 @@ struct StreamView: View {
 			session.input.interfaceOrientation = orientation
 		}
 		session.input.onMenuCombo = { showMenu = true }
-		self.session = session
-		session.start()
-	}
+			self.session = session
+			session.start()
+			session.translationCoordinator.start()
+		}
 
-	private func stop() {
-		session?.stop()
+		private func stop() {
+			session?.translationCoordinator.stop()
+			session?.stop()
 		session = nil
 		AppDelegate.setStreaming(false)
 	}
@@ -316,11 +319,35 @@ struct StreamView: View {
 		}
 		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
 		.padding(.top, 14)
-		.padding(.trailing, 20)
-		.ignoresSafeArea()
-	}
+			.padding(.trailing, 20)
+			.ignoresSafeArea()
+		}
 
-	// MARK: - Overlays
+		@ViewBuilder
+		private func translationOverlay(for session: StreamSession) -> some View {
+			if let entry = session.translationCoordinator.latestEntry,
+			   session.translationCoordinator.state == .running || session.translationCoordinator.state == .paused {
+				VStack(spacing: 4) {
+					Text(entry.translatedText)
+						.font(.title3.weight(.semibold))
+						.multilineTextAlignment(.center)
+						.environment(\.layoutDirection, .rightToLeft)
+					Text(entry.sourceText)
+						.font(.caption)
+						.foregroundStyle(.white.opacity(0.7))
+				}
+				.foregroundStyle(.white)
+				.padding(.horizontal, 18)
+				.padding(.vertical, 10)
+				.background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 14))
+				.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+				.padding(.horizontal, 40)
+				.padding(.bottom, 28)
+				.allowsHitTesting(false)
+			}
+		}
+
+		// MARK: - Overlays
 
 	@ViewBuilder
 	private func overlay(for session: StreamSession) -> some View {
@@ -460,6 +487,21 @@ struct StreamView: View {
 					Button("Disconnect", role: .destructive) {
 						showMenu = false
 						dismiss()
+					}
+				}
+				Section("Arabic translation") {
+					Button(session?.translationCoordinator.state == .running ? "Pause translation" : "Start translation") {
+						if session?.translationCoordinator.state == .running {
+							session?.translationCoordinator.pause()
+						} else {
+							session?.translationCoordinator.start()
+						}
+					}
+					Button("Stop translation", role: .destructive) {
+						session?.translationCoordinator.stop()
+					}
+					if let error = session?.translationCoordinator.lastError {
+						Text(error).font(.caption).foregroundStyle(.secondary)
 					}
 				}
 				Section {

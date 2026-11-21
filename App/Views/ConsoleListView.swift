@@ -11,9 +11,12 @@ struct ConsoleListView: View {
 	@State private var waking: UUID?
 
 	var body: some View {
-		NavigationStack {
-			List {
-				if store.consoles.isEmpty {
+			NavigationStack {
+				List {
+					Section {
+						TranslationModesView()
+					}
+					if store.consoles.isEmpty {
 					ContentUnavailableView {
 						Label("No consoles yet", systemImage: "playstation.logo")
 					} description: {
