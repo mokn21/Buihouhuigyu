@@ -52,9 +52,9 @@ jobs:
               CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test
           else
             echo "No iPad Simulator is installed; compiling the XCTest target without claiming execution."
-            xcodebuild -project OrionSubtitles.xcodeproj -scheme OrionSubtitlesTests \
+            xcodebuild build-for-testing -project OrionSubtitles.xcodeproj -scheme OrionSubtitlesTests \
               -destination 'generic/platform=iOS Simulator' \
-              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build-for-testing
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
           fi
 
       - name: Build unsigned iPad IPA
