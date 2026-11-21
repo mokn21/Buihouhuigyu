@@ -94,10 +94,10 @@ struct StreamView: View {
 				MetalStreamView(
 					renderer: renderer,
 					highRefresh: session.settings.highRefreshDisplay,
-					onTouch: { [weak session] in session?.screenTouch($0) },
-					onTap: { [weak session] in session?.screenTap(slot: $0) },
-					onCornerTap: revealMenuButton,
-					onLeftCornerTap: revealPSButton
+						onTouch: { _ in },
+						onTap: { _ in showMenu = true },
+						onCornerTap: { showMenu = true },
+						onLeftCornerTap: { showMenu = true }
 				)
 				.ignoresSafeArea()
 			}
