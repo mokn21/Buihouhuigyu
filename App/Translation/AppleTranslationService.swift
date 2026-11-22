@@ -175,7 +175,7 @@ final class AppleTranslationBridge: TextTranslationService {
     @available(iOS 18.0, *)
     private func process(session: TranslationSession, generation: UInt64) async {
         record(.workerStarted, message: "بدأ عامل استهلاك AsyncStream.", succeeded: true)
-        record(.sessionReceived, message: "session.isReady قبل فحص اللغة: \(session.isReady).", succeeded: session.isReady)
+        record(.sessionReceived, message: "استلمت الجلسة؛ SDK الحالية لا توفر session.isReady على TranslationSession.", succeeded: true, details: "canRequestDownloads=\(session.canRequestDownloads)")
         record(.availabilityStarted, message: "جارٍ فحص توفر English إلى Arabic.", succeeded: nil)
         let availability = await LanguageAvailability().status(from: source, to: target)
         record(.availabilityFinished, message: "حالة توفر English إلى Arabic: \(String(describing: availability)).", succeeded: availability == .installed || availability == .supported)
@@ -193,15 +193,11 @@ final class AppleTranslationBridge: TextTranslationService {
             ? "نماذج ترجمة English إلى العربية جاهزة."
             : "نماذج ترجمة English إلى العربية غير مثبتة؛ سيطلب النظام تنزيلها."
 
-        if !session.isReady {
-            do {
+        do {
                 statusMessage = "جارٍ طلب تنزيل نماذج English إلى العربية…"
                 record(.preparationStarted, message: "بدأ prepareTranslation لتنزيل نموذج اللغة.", succeeded: nil)
                 try await session.prepareTranslation()
-                record(.preparationFinished, message: "انتهى prepareTranslation؛ session.isReady=\(session.isReady).", succeeded: session.isReady)
-                guard session.isReady else {
-                    throw TranslationError.failed("اكتمل تجهيز Apple Translation دون أن تصبح الجلسة جاهزة.")
-                }
+                record(.preparationFinished, message: "انتهى prepareTranslation بنجاح؛ لا توفر SDK قيمة session.isReady.", succeeded: true, details: "canRequestDownloads=\(session.canRequestDownloads)")
                 statusMessage = "تم تنزيل نماذج English إلى العربية وأصبحت جاهزة."
             } catch {
                 recordFailure(error, phase: .preparationFinished, message: "فشل prepareTranslation.")
@@ -212,11 +208,10 @@ final class AppleTranslationBridge: TextTranslationService {
                 failPending(with: failure)
                 return
             }
-        }
 
         sessionReady = true
         statusMessage = "جلسة Apple Translation جاهزة للترجمة الإنجليزية إلى العربية."
-        record(.sessionReady, message: "الجلسة جاهزة؛ session.isReady=\(session.isReady).", succeeded: session.isReady)
+        record(.sessionReady, message: "اجتازت الجلسة prepareTranslation وأصبحت بوابة الطلبات مفتوحة.", succeeded: true)
         let waiters = readinessWaiters
         readinessWaiters.removeAll()
         for waiter in waiters.values { waiter.resume() }
