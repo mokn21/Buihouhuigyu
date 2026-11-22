@@ -6,8 +6,8 @@ import Tokenizers
 
 @available(iOS 18.0, *)
 final class OpusMTEnglishArabicService: TextTranslationService {
-    private let encoder: MLModel?
-    private let decoder: MLModel?
+    private var encoder: MLModel?
+    private var decoder: MLModel?
     private var sourceTokenizer: Tokenizer?
     private var targetTokenizer: Tokenizer?
     private let sourceTokenizerJSONURL: URL?
@@ -23,6 +23,8 @@ final class OpusMTEnglishArabicService: TextTranslationService {
     private let lock = NSLock()
 
     init() {
+        encoder = nil
+        decoder = nil
         sourceTokenizer = nil
         targetTokenizer = nil
         do {
@@ -44,8 +46,6 @@ final class OpusMTEnglishArabicService: TextTranslationService {
             targetTokenizerConfigURL = targetConfig
             initializationError = nil
         } catch {
-            encoder = nil
-            decoder = nil
             sourceTokenizer = nil
             targetTokenizer = nil
             sourceTokenizerJSONURL = nil
