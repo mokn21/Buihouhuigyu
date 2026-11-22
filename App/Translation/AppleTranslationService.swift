@@ -72,6 +72,7 @@ final class AppleTranslationBridge: TextTranslationService {
     private var sessionGeneration: UInt64 = 0
     private var ledger = TranslationRequestLedger()
     private var pendingRequests: [UUID: PendingRequest] = [:]
+    private var readinessWaiters: [UUID: CheckedContinuation<Void, Error>] = [:]
     private var availabilityFailure: TranslationError?
 
     init() {
@@ -95,6 +96,7 @@ final class AppleTranslationBridge: TextTranslationService {
             return try await withThrowingTaskGroup(of: String.self) { group in
                 group.addTask { [weak self] in
                     guard let self else { throw TranslationError.failed("انتهت جلسة الترجمة.") }
+                    try await self.waitUntilReady(id: id)
                     return try await self.enqueueAndWait(id: id, text: text)
                 }
                 group.addTask {
@@ -129,6 +131,25 @@ final class AppleTranslationBridge: TextTranslationService {
         })
     }
 
+    private func waitUntilReady(id: UUID) async throws {
+        if sessionReady { return }
+        if let availabilityFailure { throw availabilityFailure }
+        try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { continuation in
+                if sessionReady {
+                    continuation.resume()
+                } else if let availabilityFailure {
+                    continuation.resume(throwing: availabilityFailure)
+                } else {
+                    readinessWaiters[id] = continuation
+                }
+            }
+        }, onCancel: {
+            guard let continuation = readinessWaiters.removeValue(forKey: id) else { return }
+            continuation.resume(throwing: TranslationError.failed("أُلغي انتظار جاهزية جلسة Apple Translation."))
+        })
+    }
+
     private func cancelRequest(_ id: UUID) {
         guard let request = pendingRequests.removeValue(forKey: id), ledger.complete(id) else { return }
         request.continuation.resume(throwing: TranslationError.failed("أُلغي طلب الترجمة قبل عودة النتيجة."))
@@ -154,6 +175,7 @@ final class AppleTranslationBridge: TextTranslationService {
     @available(iOS 18.0, *)
     private func process(session: TranslationSession, generation: UInt64) async {
         record(.workerStarted, message: "بدأ عامل استهلاك AsyncStream.", succeeded: true)
+        record(.sessionReceived, message: "session.isReady قبل فحص اللغة: \(session.isReady).", succeeded: session.isReady)
         record(.availabilityStarted, message: "جارٍ فحص توفر English إلى Arabic.", succeeded: nil)
         let availability = await LanguageAvailability().status(from: source, to: target)
         record(.availabilityFinished, message: "حالة توفر English إلى Arabic: \(String(describing: availability)).", succeeded: availability == .installed || availability == .supported)
@@ -162,6 +184,7 @@ final class AppleTranslationBridge: TextTranslationService {
             recordFailure(error, phase: .availabilityFinished, message: "زوج اللغات غير متاح على الجهاز.")
             availabilityFailure = error
             statusMessage = error.localizedDescription
+            failReadinessWaiters(with: error)
             failPending(with: error)
             return
         }
@@ -170,18 +193,22 @@ final class AppleTranslationBridge: TextTranslationService {
             ? "نماذج ترجمة English إلى العربية جاهزة."
             : "نماذج ترجمة English إلى العربية غير مثبتة؛ سيطلب النظام تنزيلها."
 
-        if availability == .supported {
+        if !session.isReady {
             do {
                 statusMessage = "جارٍ طلب تنزيل نماذج English إلى العربية…"
                 record(.preparationStarted, message: "بدأ prepareTranslation لتنزيل نموذج اللغة.", succeeded: nil)
                 try await session.prepareTranslation()
-                record(.preparationFinished, message: "اكتمل prepareTranslation بنجاح.", succeeded: true)
+                record(.preparationFinished, message: "انتهى prepareTranslation؛ session.isReady=\(session.isReady).", succeeded: session.isReady)
+                guard session.isReady else {
+                    throw TranslationError.failed("اكتمل تجهيز Apple Translation دون أن تصبح الجلسة جاهزة.")
+                }
                 statusMessage = "تم تنزيل نماذج English إلى العربية وأصبحت جاهزة."
             } catch {
                 recordFailure(error, phase: .preparationFinished, message: "فشل prepareTranslation.")
                 let failure = TranslationError.failed("تعذر تنزيل نماذج Apple Translation. وافق على التنزيل وتحقق من اتصال الإنترنت ثم حاول مرة أخرى.")
                 availabilityFailure = failure
                 statusMessage = failure.localizedDescription
+                failReadinessWaiters(with: failure)
                 failPending(with: failure)
                 return
             }
@@ -189,7 +216,10 @@ final class AppleTranslationBridge: TextTranslationService {
 
         sessionReady = true
         statusMessage = "جلسة Apple Translation جاهزة للترجمة الإنجليزية إلى العربية."
-        record(.sessionReady, message: "أصبحت جلسة Apple Translation جاهزة لاستقبال الطلبات.", succeeded: true)
+        record(.sessionReady, message: "الجلسة جاهزة؛ session.isReady=\(session.isReady).", succeeded: session.isReady)
+        let waiters = readinessWaiters
+        readinessWaiters.removeAll()
+        for waiter in waiters.values { waiter.resume() }
 
         for await request in requestStream {
             guard generation == sessionGeneration, !Task.isCancelled else {
@@ -239,6 +269,14 @@ final class AppleTranslationBridge: TextTranslationService {
         pendingRequests.removeAll()
         for request in requests where ledger.complete(request.id) {
             request.continuation.resume(throwing: error)
+        }
+    }
+
+    private func failReadinessWaiters(with error: TranslationError) {
+        let waiters = readinessWaiters
+        readinessWaiters.removeAll()
+        for waiter in waiters.values {
+            waiter.resume(throwing: error)
         }
     }
 
