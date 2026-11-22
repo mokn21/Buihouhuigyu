@@ -389,10 +389,14 @@ struct StreamView: View {
 			quickTool("منطقة", icon: "crop") {
 				showRegionEditor = true
 			}
-			quickTool("اختبار", icon: "checkmark.seal") {
-				showTranslationDiagnostics = true
-			}
-			quickTool("مظهر", icon: "circle.lefthalf.filled") {
+				quickTool("اختبار", icon: "checkmark.seal") {
+					showTranslationDiagnostics = true
+				}
+				quickTool("إيقاف العرض", icon: "stop.fill") {
+					stop()
+					dismiss()
+				}
+				quickTool("مظهر", icon: "circle.lefthalf.filled") {
 				let themes = TranslationTheme.allCases
 				if let index = themes.firstIndex(of: settingsStore.settings.translationTheme) {
 					settingsStore.settings.translationTheme = themes[(index + 1) % themes.count]
@@ -504,9 +508,13 @@ struct StreamView: View {
 								session.translationCoordinator.start()
 							}
 						}
-						quickTool("المنطقة", icon: "crop") { showRegionEditor = true }
-						quickTool("اختبار", icon: "checkmark.seal") { showTranslationDiagnostics = true }
+					quickTool("المنطقة", icon: "crop") { showRegionEditor = true }
+					quickTool("اختبار", icon: "checkmark.seal") { showTranslationDiagnostics = true }
+					quickTool("إيقاف العرض", icon: "stop.fill") {
+						stop()
+						dismiss()
 					}
+				}
 					.padding(.horizontal, 12)
 					.padding(.vertical, 9)
 					.background(.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 16))
