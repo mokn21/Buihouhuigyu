@@ -1,6 +1,47 @@
 import Foundation
 import Observation
 
+enum AppleTranslationDiagnosticPhase: String, CaseIterable, Identifiable {
+    case configurationCreated
+    case translationTaskStarted
+    case sessionReceived
+    case workerStarted
+    case sessionReady
+    case requestEnqueued
+    case requestConsumed
+    case availabilityStarted
+    case availabilityFinished
+    case preparationStarted
+    case preparationFinished
+    case translateStarted
+    case translateFinished
+    case failed
+    case timedOut
+
+    var id: String { rawValue }
+}
+
+struct AppleTranslationDiagnosticEvent: Identifiable {
+    let id = UUID()
+    let phase: AppleTranslationDiagnosticPhase
+    let message: String
+    let succeeded: Bool?
+    let timestamp: Date
+    let elapsedMilliseconds: Double?
+    let details: String?
+}
+
+struct AppleTranslationFailure: Identifiable {
+    let id = UUID()
+    let phase: AppleTranslationDiagnosticPhase
+    let typeName: String
+    let domain: String?
+    let code: Int?
+    let localizedDescription: String
+    let userInfo: String?
+    let timestamp: Date
+}
+
 #if canImport(SwiftUI) && canImport(Translation)
 import SwiftUI
 import Translation
@@ -21,6 +62,9 @@ final class AppleTranslationBridge: TextTranslationService {
     private let requestContinuation: AsyncStream<PendingRequest>.Continuation
     private(set) var statusMessage = "لم تبدأ الترجمة بعد."
     private(set) var sessionReady = false
+    private(set) var diagnosticEvents: [AppleTranslationDiagnosticEvent] = []
+    private(set) var lastFailure: AppleTranslationFailure?
+    private var diagnosticStartedAt = Date()
 
     // One stream, one worker. The worker runs inside the structured
     // translationTask action, so SwiftUI cancellation also cancels the Apple
@@ -35,6 +79,7 @@ final class AppleTranslationBridge: TextTranslationService {
         requestStream = pair.stream
         requestContinuation = pair.continuation
         configuration = TranslationSession.Configuration(source: source, target: target)
+        record(.configurationCreated, message: "تم إنشاء TranslationSession.Configuration للإنجليزية إلى العربية.", succeeded: true)
     }
 
     func translate(_ text: String) async throws -> String {
@@ -46,20 +91,27 @@ final class AppleTranslationBridge: TextTranslationService {
         }
 
         let id = UUID()
-        return try await withThrowingTaskGroup(of: String.self) { group in
-            group.addTask { [weak self] in
-                guard let self else { throw TranslationError.failed("انتهت جلسة الترجمة.") }
-                return try await self.enqueueAndWait(id: id, text: text)
+        do {
+            return try await withThrowingTaskGroup(of: String.self) { group in
+                group.addTask { [weak self] in
+                    guard let self else { throw TranslationError.failed("انتهت جلسة الترجمة.") }
+                    return try await self.enqueueAndWait(id: id, text: text)
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(20))
+                    throw TranslationError.failed("لم تستجب جلسة Apple Translation خلال 20 ثانية. تحقق من الجلسة ونماذج اللغة ثم حاول مرة أخرى.")
+                }
+                defer { group.cancelAll() }
+                guard let result = try await group.next() else {
+                    throw TranslationError.failed("لم تُرجع جلسة Apple Translation نتيجة.")
+                }
+                return result
             }
-            group.addTask {
-                try await Task.sleep(for: .seconds(20))
-                throw TranslationError.failed("لم تستجب جلسة Apple Translation خلال 20 ثانية. تحقق من الجلسة ونماذج اللغة ثم حاول مرة أخرى.")
+        } catch {
+            if error.localizedDescription.contains("20 ثانية") {
+                recordFailure(error, phase: .timedOut, message: "انتهت مهلة انتظار جلسة Apple Translation.")
             }
-            defer { group.cancelAll() }
-            guard let result = try await group.next() else {
-                throw TranslationError.failed("لم تُرجع جلسة Apple Translation نتيجة.")
-            }
-            return result
+            throw error
         }
     }
 
@@ -69,6 +121,7 @@ final class AppleTranslationBridge: TextTranslationService {
                 let request = PendingRequest(id: id, text: text, continuation: continuation)
                 pendingRequests[id] = request
                 ledger.enqueue(id)
+                record(.requestEnqueued, message: "وصل طلب ترجمة إلى AsyncStream: \(text)", succeeded: true)
                 requestContinuation.yield(request)
             }
         }, onCancel: {
@@ -83,6 +136,8 @@ final class AppleTranslationBridge: TextTranslationService {
 
     @available(iOS 18.0, *)
     func run(session: TranslationSession) async {
+        record(.translationTaskStarted, message: "بدأ translationTask.", succeeded: true)
+        record(.sessionReceived, message: "استلم التطبيق TranslationSession فعلية من SwiftUI.", succeeded: true)
         sessionGeneration &+= 1
         let generation = sessionGeneration
         availabilityFailure = nil
@@ -98,9 +153,13 @@ final class AppleTranslationBridge: TextTranslationService {
 
     @available(iOS 18.0, *)
     private func process(session: TranslationSession, generation: UInt64) async {
+        record(.workerStarted, message: "بدأ عامل استهلاك AsyncStream.", succeeded: true)
+        record(.availabilityStarted, message: "جارٍ فحص توفر English إلى Arabic.", succeeded: nil)
         let availability = await LanguageAvailability().status(from: source, to: target)
+        record(.availabilityFinished, message: "حالة توفر English إلى Arabic: \(String(describing: availability)).", succeeded: availability == .installed || availability == .supported)
         guard availability == .installed || availability == .supported else {
             let error = TranslationError.unavailable("لا تتوفر ترجمة English إلى العربية على هذا الجهاز. لم تُعرض ترجمة وهمية.")
+            recordFailure(error, phase: .availabilityFinished, message: "زوج اللغات غير متاح على الجهاز.")
             availabilityFailure = error
             statusMessage = error.localizedDescription
             failPending(with: error)
@@ -114,9 +173,12 @@ final class AppleTranslationBridge: TextTranslationService {
         if availability == .supported {
             do {
                 statusMessage = "جارٍ طلب تنزيل نماذج English إلى العربية…"
+                record(.preparationStarted, message: "بدأ prepareTranslation لتنزيل نموذج اللغة.", succeeded: nil)
                 try await session.prepareTranslation()
+                record(.preparationFinished, message: "اكتمل prepareTranslation بنجاح.", succeeded: true)
                 statusMessage = "تم تنزيل نماذج English إلى العربية وأصبحت جاهزة."
             } catch {
+                recordFailure(error, phase: .preparationFinished, message: "فشل prepareTranslation.")
                 let failure = TranslationError.failed("تعذر تنزيل نماذج Apple Translation. وافق على التنزيل وتحقق من اتصال الإنترنت ثم حاول مرة أخرى.")
                 availabilityFailure = failure
                 statusMessage = failure.localizedDescription
@@ -127,6 +189,7 @@ final class AppleTranslationBridge: TextTranslationService {
 
         sessionReady = true
         statusMessage = "جلسة Apple Translation جاهزة للترجمة الإنجليزية إلى العربية."
+        record(.sessionReady, message: "أصبحت جلسة Apple Translation جاهزة لاستقبال الطلبات.", succeeded: true)
 
         for await request in requestStream {
             guard generation == sessionGeneration, !Task.isCancelled else {
@@ -139,8 +202,10 @@ final class AppleTranslationBridge: TextTranslationService {
                 // A duplicate stream item or an already completed request.
                 continue
             }
+            record(.requestConsumed, message: "استهلك العامل طلب ترجمة: \(request.text)", succeeded: true)
 
             do {
+                record(.translateStarted, message: "تم استدعاء session.translate.", succeeded: nil)
                 let response = try await session.translate(request.text)
                 if Task.isCancelled || generation != sessionGeneration {
                     ledger.requeue(request.id)
@@ -154,6 +219,7 @@ final class AppleTranslationBridge: TextTranslationService {
                 if ledger.complete(request.id) {
                     pendingRequests.removeValue(forKey: request.id)
                     request.continuation.resume(returning: translatedText)
+                    record(.translateFinished, message: "رجعت targetText بنتيجة غير فارغة.", succeeded: true)
                 }
             } catch is CancellationError {
                 ledger.requeue(request.id)
@@ -162,6 +228,7 @@ final class AppleTranslationBridge: TextTranslationService {
             } catch {
                 _ = ledger.complete(request.id)
                 pendingRequests.removeValue(forKey: request.id)
+                recordFailure(error, phase: .translateFinished, message: "فشل session.translate.")
                 request.continuation.resume(throwing: TranslationError.failed(Self.arabicErrorMessage(for: error)))
             }
         }
@@ -180,6 +247,47 @@ final class AppleTranslationBridge: TextTranslationService {
             return message
         }
         return "تعذرت ترجمة النص بواسطة Apple Translation. تحقق من توفر نماذج اللغة ثم حاول مرة أخرى."
+    }
+
+    private func record(_ phase: AppleTranslationDiagnosticPhase, message: String, succeeded: Bool?, details: String? = nil) {
+        let elapsed = Date().timeIntervalSince(diagnosticStartedAt) * 1000
+        diagnosticEvents.append(AppleTranslationDiagnosticEvent(
+            phase: phase,
+            message: message,
+            succeeded: succeeded,
+            timestamp: Date(),
+            elapsedMilliseconds: elapsed,
+            details: details
+        ))
+        if diagnosticEvents.count > 200 { diagnosticEvents.removeFirst(diagnosticEvents.count - 200) }
+    }
+
+    private func recordFailure(_ error: Error, phase: AppleTranslationDiagnosticPhase, message: String) {
+        let nsError = error as NSError
+        let userInfo = Self.sanitizedUserInfo(nsError.userInfo)
+        let failure = AppleTranslationFailure(
+            phase: phase,
+            typeName: String(reflecting: type(of: error)),
+            domain: nsError.domain,
+            code: nsError.code,
+            localizedDescription: nsError.localizedDescription,
+            userInfo: userInfo,
+            timestamp: Date()
+        )
+        lastFailure = failure
+        record(.failed, message: message, succeeded: false, details: "type=\(failure.typeName); domain=\(failure.domain ?? ""); code=\(failure.code ?? 0); description=\(failure.localizedDescription); userInfo=\(failure.userInfo ?? "")")
+    }
+
+    private static func sanitizedUserInfo(_ values: [String: Any]) -> String? {
+        let blocked = ["password", "token", "secret", "key", "authorization", "cookie"]
+        let safe = values.compactMap { key, value -> String? in
+            let lower = key.lowercased()
+            guard !blocked.contains(where: { lower.contains($0) }) else { return nil }
+            if let value = value as? String { return "\(key)=\(value)" }
+            if let value = value as? NSNumber { return "\(key)=\(value)" }
+            return "\(key)=\(String(describing: value))"
+        }
+        return safe.isEmpty ? nil : safe.sorted().joined(separator: "; ")
     }
 }
 #endif

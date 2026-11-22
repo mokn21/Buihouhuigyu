@@ -1,10 +1,19 @@
 import SwiftUI
 
 struct TranslationDiagnosticsView: View {
+    private struct SampleResult: Identifiable {
+        let id = UUID()
+        let source: String
+        let target: String?
+        let error: String?
+        let elapsedMilliseconds: Double
+        let phase: String
+    }
+
     let coordinator: TranslationCoordinator
     let bridge: AnyObject?
     @Environment(\.dismiss) private var dismiss
-    @State private var results: [(String, String)] = []
+    @State private var results: [SampleResult] = []
     @State private var running = false
     @State private var status = "لم يبدأ الاختبار."
     @State private var elapsedMilliseconds: Double?
@@ -21,6 +30,33 @@ struct TranslationDiagnosticsView: View {
                     diagnosticCard(title: "آخر خطأ", value: coordinator.lastError ?? "لا يوجد خطأ مسجل.")
                     diagnosticCard(title: "الإطارات المعالجة", value: "\(coordinator.processedFrames) — المتخطاة: \(coordinator.skippedFrames)")
                     diagnosticCard(title: "طلبات الترجمة", value: "أُرسلت: \(coordinator.submittedTranslationCount) — عادت: \(coordinator.returnedTranslationCount)")
+
+                    if let bridge = bridge as? AppleTranslationBridge {
+                        diagnosticCard(title: "أحداث جلسة Apple الأخيرة", value: "\(bridge.diagnosticEvents.count) حدثًا مسجلًا")
+                        ForEach(bridge.diagnosticEvents.suffix(20)) { event in
+                            HStack(alignment: .top, spacing: 8) {
+                                Circle()
+                                    .fill(event.succeeded == false ? .red : event.succeeded == true ? .green : .yellow)
+                                    .frame(width: 8, height: 8)
+                                    .padding(.top, 6)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(event.message)
+                                    Text("\(event.phase.rawValue) — \(String(format: "%.0f ms", event.elapsedMilliseconds ?? 0))")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                    if let details = event.details {
+                                        Text(details).font(.caption2).foregroundStyle(.orange)
+                                    }
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                            .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+                        }
+                        if let failure = bridge.lastFailure {
+                            diagnosticCard(title: "الخطأ الأصلي", value: "type=\(failure.typeName)\ndomain=\(failure.domain ?? "غير متوفر")\ncode=\(failure.code.map(String.init) ?? "غير متوفر")\n\(failure.localizedDescription)\n\(failure.userInfo ?? "لا توجد userInfo آمنة")")
+                        }
+                    }
 
                     Divider()
                     Text("اختبار Apple Translation الحقيقي")
@@ -39,10 +75,13 @@ struct TranslationDiagnosticsView: View {
                     if let elapsedMilliseconds {
                         diagnosticCard(title: "زمن الاختبار", value: String(format: "%.0f مللي ثانية", elapsedMilliseconds))
                     }
-                    ForEach(results, id: \.0) { source, target in
+                    ForEach(results) { result in
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("الإنجليزية: \(source)").font(.subheadline.weight(.semibold))
-                            Text("العربية: \(target)").font(.body)
+                            Text("الإنجليزية: \(result.source)").font(.subheadline.weight(.semibold))
+                            Text(result.target.map { "العربية: \($0)" } ?? "فشل: \(result.error ?? "خطأ غير معروف")").font(.body)
+                            Text("المرحلة: \(result.phase) — الزمن: \(String(format: "%.0f مللي ثانية", result.elapsedMilliseconds))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
@@ -83,16 +122,35 @@ struct TranslationDiagnosticsView: View {
                 guard #available(iOS 18.0, *), let bridge = bridge as? AppleTranslationBridge else {
                     throw TranslationError.unavailable("اختبار Apple Translation يتطلب iPadOS 18 أو أحدث وجلسة ترجمة مفعلة.")
                 }
-                var output: [(String, String)] = []
+                var output: [SampleResult] = []
                 for sample in samples {
-                    let translated = try await bridge.translate(sample)
-                    output.append((sample, translated))
+                    let startedSample = ContinuousClock.now
+                    do {
+                        let translated = try await bridge.translate(sample)
+                        let finishedSample = ContinuousClock.now
+                        output.append(SampleResult(
+                            source: sample,
+                            target: translated,
+                            error: nil,
+                            elapsedMilliseconds: Self.elapsedMilliseconds(startedSample, finishedSample),
+                            phase: "translateFinished"
+                        ))
+                    } catch {
+                        let finishedSample = ContinuousClock.now
+                        output.append(SampleResult(
+                            source: sample,
+                            target: nil,
+                            error: error.localizedDescription,
+                            elapsedMilliseconds: Self.elapsedMilliseconds(startedSample, finishedSample),
+                            phase: bridge.diagnosticEvents.last?.phase.rawValue ?? "failed"
+                        ))
+                    }
                 }
                 let finished = ContinuousClock.now
                 await MainActor.run {
                     results = output
                     elapsedMilliseconds = Double(started.duration(to: finished).components.seconds) * 1000 + Double(started.duration(to: finished).components.attoseconds) / 1_000_000_000_000_000
-                    status = "نجح الاختبار: أعادت Apple Translation نتائج فعلية للجمل الثلاث."
+                    status = "اكتمل اختبار النصوص الثلاثة؛ راجع نجاح أو فشل كل نص على حدة."
                     running = false
                 }
             } catch {
@@ -102,5 +160,10 @@ struct TranslationDiagnosticsView: View {
                 }
             }
         }
+    }
+
+    private static func elapsedMilliseconds(_ start: ContinuousClock.Instant, _ end: ContinuousClock.Instant) -> Double {
+        let duration = start.duration(to: end)
+        return Double(duration.components.seconds) * 1000 + Double(duration.components.attoseconds) / 1_000_000_000_000_000
     }
 }
