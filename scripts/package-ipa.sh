@@ -28,5 +28,16 @@ xcodebuild -project OrionSubtitles.xcodeproj -scheme OrionSubtitles -configurati
 rm -rf "$STAGE" "$OUT"
 mkdir -p "$STAGE/Payload"
 cp -R "$DERIVED/Build/Products/Release-iphoneos/OrionSubtitles.app" "$STAGE/Payload/"
+APP_PLIST="$STAGE/Payload/OrionSubtitles.app/Info.plist"
+python3 - "$APP_PLIST" <<'PY'
+import plistlib
+import sys
+from pathlib import Path
+
+plist_path = Path(sys.argv[1])
+data = plistlib.loads(plist_path.read_bytes())
+data["UIDeviceFamily"] = [2]
+plist_path.write_bytes(plistlib.dumps(data, fmt=plistlib.FMT_BINARY))
+PY
 (cd "$STAGE" && zip -qry "$OUT" Payload)
 echo "Built $OUT"
