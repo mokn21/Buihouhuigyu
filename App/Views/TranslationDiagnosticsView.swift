@@ -31,7 +31,7 @@ struct TranslationDiagnosticsView: View {
                     diagnosticCard(title: "الإطارات المعالجة", value: "\(coordinator.processedFrames) — المتخطاة: \(coordinator.skippedFrames)")
                     diagnosticCard(title: "طلبات الترجمة", value: "أُرسلت: \(coordinator.submittedTranslationCount) — عادت: \(coordinator.returnedTranslationCount)")
 
-                    if let bridge = bridge as? AppleTranslationBridge {
+                    if #available(iOS 18.0, *), let bridge = bridge as? AppleTranslationBridge {
                         diagnosticCard(title: "أحداث جلسة Apple الأخيرة", value: "\(bridge.diagnosticEvents.count) حدثًا مسجلًا")
                         ForEach(bridge.diagnosticEvents.suffix(20)) { event in
                             HStack(alignment: .top, spacing: 8) {
