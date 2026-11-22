@@ -46,6 +46,8 @@ targets:
         CFBundleDisplayName: Orion Subtitles
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UIDeviceFamily:
+          - 2
         LSRequiresIPhoneOS: true
         LSApplicationCategoryType: public.app-category.games
         UILaunchScreen: {}
