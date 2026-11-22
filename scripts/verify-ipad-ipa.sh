@@ -8,7 +8,7 @@ trap 'rm -rf "$CHECK_DIR"' EXIT
 
 [ -f "$IPA" ] || { echo "FAIL: IPA not found: $IPA" >&2; exit 1; }
 unzip -q "$IPA" -d "$CHECK_DIR"
-APP_PLIST="$(find "$CHECK_DIR/Payload" -name Info.plist -type f | head -1)"
+APP_PLIST="$(find "$CHECK_DIR/Payload" -mindepth 2 -maxdepth 2 -path '*.app/Info.plist' -type f | head -1)"
 [ -n "$APP_PLIST" ] || { echo "FAIL: app Info.plist not found inside IPA" >&2; exit 1; }
 
 python3 - "$APP_PLIST" "$EXPECTED_BUNDLE_ID" <<'PY'
