@@ -22,9 +22,9 @@ final class AppleTranslationBridge: TextTranslationService {
     private(set) var statusMessage = "لم تبدأ الترجمة بعد."
     private(set) var sessionReady = false
 
-    // One stream, one worker. Re-running translationTask replaces the worker;
-    // it never starts a second consumer of the same stream.
-    private var workerTask: Task<Void, Never>?
+    // One stream, one worker. The worker runs inside the structured
+    // translationTask action, so SwiftUI cancellation also cancels the Apple
+    // session before its view disappears.
     private var sessionGeneration: UInt64 = 0
     private var ledger = TranslationRequestLedger()
     private var pendingRequests: [UUID: PendingRequest] = [:]
@@ -83,22 +83,17 @@ final class AppleTranslationBridge: TextTranslationService {
 
     @available(iOS 18.0, *)
     func run(session: TranslationSession) async {
-        workerTask?.cancel()
         sessionGeneration &+= 1
         let generation = sessionGeneration
         availabilityFailure = nil
         sessionReady = false
         statusMessage = "جارٍ تشغيل جلسة Apple Translation…"
 
-        let worker = Task { [weak self] in
-            guard let self else { return }
-            await self.process(session: session, generation: generation)
-        }
-        workerTask = worker
-        await worker.value
-        if generation == sessionGeneration {
-            workerTask = nil
-        }
+        // Do not create an unstructured Task here. Apple invalidates a
+        // TranslationSession when the attached view disappears or its
+        // configuration changes; keeping the session in a detached child task
+        // can therefore lead to a fatal error on the next translate call.
+        await process(session: session, generation: generation)
     }
 
     @available(iOS 18.0, *)

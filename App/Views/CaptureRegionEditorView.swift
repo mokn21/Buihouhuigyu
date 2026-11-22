@@ -8,6 +8,8 @@ struct CaptureRegionEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: CaptureRegion
     @State private var zoom: Double = 1
+    @State private var previewOffset: CGSize = .zero
+    @State private var panStart: CGSize?
     @State private var moveStart: CaptureRegion?
     @State private var resizeStart: CaptureRegion?
 
@@ -38,6 +40,18 @@ struct CaptureRegionEditorView: View {
                     labeledSlider(title: "الارتفاع", value: $draft.height, range: 0.05...1, label: String(format: "%.0f%%", draft.height * 100))
                 }
                 .padding(.horizontal)
+                HStack {
+                    Text("حرّك الصورة بإصبعك، واسحب المربع الأزرق لتغيير مكان الالتقاط")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("إعادة ضبط") {
+                        zoom = 1
+                        previewOffset = .zero
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.horizontal)
             }
             .padding(.vertical)
             .background(Color.black.ignoresSafeArea())
@@ -60,6 +74,8 @@ struct CaptureRegionEditorView: View {
                     .resizable()
                     .scaledToFit()
                     .scaleEffect(zoom)
+                    .offset(previewOffset)
+                    .gesture(previewPanGesture())
             } else {
                 ZStack {
                     Color(white: 0.08)
@@ -119,6 +135,19 @@ struct CaptureRegionEditorView: View {
         }.onEnded { _ in
             resizeStart = nil
         }
+    }
+
+    private func previewPanGesture() -> some Gesture {
+        DragGesture(minimumDistance: 2)
+            .onChanged { value in
+                if panStart == nil { panStart = previewOffset }
+                guard let panStart else { return }
+                previewOffset = CGSize(
+                    width: panStart.width + value.translation.width,
+                    height: panStart.height + value.translation.height
+                )
+            }
+            .onEnded { _ in panStart = nil }
     }
 
     private func labeledSlider(title: String, value: Binding<Double>, range: ClosedRange<Double>, label: String) -> some View {
