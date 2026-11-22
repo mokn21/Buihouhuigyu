@@ -130,9 +130,15 @@ struct StreamView: View {
 				.ignoresSafeArea()
 			}
 
-				if let session {
-					overlay(for: session)
-					translationOverlay(for: session)
+					if let session {
+						overlay(for: session)
+						if !blackTranslationMode {
+							translationOverlay(for: session)
+						}
+					}
+
+				if blackTranslationMode, let session {
+					blackModeToolbar(for: session)
 				}
 
 			if showSettingsHint && !showMenuButton {
@@ -483,6 +489,33 @@ struct StreamView: View {
 				.background(Color.black.ignoresSafeArea())
 				.environment(\.layoutDirection, .rightToLeft)
 			}
+
+				private func blackModeToolbar(for session: StreamSession) -> some View {
+					HStack(spacing: 8) {
+						quickTool("العرض", icon: "play.tv") {
+							blackTranslationMode = false
+							session.setTranslationBlackMode(false)
+						}
+						quickTool(session.translationCoordinator.state == .running ? "إيقاف OCR" : "تشغيل OCR",
+							icon: session.translationCoordinator.state == .running ? "text.viewfinder" : "text.viewfinder.slash") {
+							if session.translationCoordinator.state == .running {
+								session.translationCoordinator.pause()
+							} else {
+								session.translationCoordinator.start()
+							}
+						}
+						quickTool("المنطقة", icon: "crop") { showRegionEditor = true }
+						quickTool("اختبار", icon: "checkmark.seal") { showTranslationDiagnostics = true }
+					}
+					.padding(.horizontal, 12)
+					.padding(.vertical, 9)
+					.background(.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 16))
+					.foregroundStyle(.white)
+					.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+					.padding(.top, 12)
+					.padding(.horizontal, 12)
+					.ignoresSafeArea()
+				}
 
 			private func translationColor(_ choice: TranslationColorChoice) -> Color {
 				switch choice {

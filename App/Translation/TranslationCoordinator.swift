@@ -113,13 +113,20 @@ final class TranslationCoordinator {
         }
     }
 
-    private func acceptOCR(_ result: OCRResult) {
-        let normalized = Self.normalize(result.text)
-        guard !normalized.isEmpty, normalized != lastSourceText else {
-            skippedFrames += 1
-            return
-        }
-		lastSourceText = normalized
+	private func acceptOCR(_ result: OCRResult) {
+		let normalized = Self.normalize(result.text)
+		guard !normalized.isEmpty, normalized != lastSourceText else {
+			skippedFrames += 1
+			return
+		}
+		// Do not queue a second Core ML/Apple translation while the previous one
+		// is still running. Keeping lastSourceText unchanged here lets the next
+		// OCR frame retry the latest text without building an unbounded backlog.
+		guard translationTasks.isEmpty else {
+			skippedFrames += 1
+			return
+		}
+			lastSourceText = normalized
 		lastDetectedText = result.text
 		processedFrames += 1
         nextGeneration &+= 1
@@ -146,9 +153,10 @@ final class TranslationCoordinator {
 				self.returnedTranslationCount += 1
 					self.translationStatusMessage = "عادت ترجمة عربية من OPUS-MT أو Apple Translation."
 				self.publish(translated, source: result, generation: generation)
-			} catch {
-	                guard !Task.isCancelled else { return }
-				self.lastError = error.localizedDescription
+				} catch {
+		                guard !Task.isCancelled else { return }
+					self.lastSourceText = ""
+					self.lastError = error.localizedDescription
 				self.translationStatusMessage = "تعذرت ترجمة النص الحالي: \(error.localizedDescription) سيستمر OCR وستتم إعادة المحاولة عند ظهور نص جديد."
 				// A single unavailable model/session must not stop OCR. Keeping the
 				// coordinator running allows the user to install models or retry without

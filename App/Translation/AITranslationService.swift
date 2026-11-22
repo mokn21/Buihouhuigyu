@@ -14,6 +14,8 @@ final class OpusMTEnglishArabicService: TextTranslationService {
     private let sourceTokenizerConfigURL: URL?
     private let targetTokenizerJSONURL: URL?
     private let targetTokenizerConfigURL: URL?
+    private let encoderURLForLazyLoad: URL?
+    private let decoderURLForLazyLoad: URL?
     private let initializationError: Error?
     private let maxTokens = 64
     private let padTokenID = 61246
@@ -36,18 +38,18 @@ final class OpusMTEnglishArabicService: TextTranslationService {
                 let targetJSON = Bundle.main.url(forResource: "target-tokenizer", withExtension: "json"),
                 let targetConfig = Bundle.main.url(forResource: "target-tokenizer-config", withExtension: "json")
             else { throw TranslationError.unavailable("لم يتم تضمين ملفات tokenizer الخاصة بنموذج OPUS-MT.") }
-            let configuration = MLModelConfiguration()
-            configuration.computeUnits = .all
-            encoder = try MLModel(contentsOf: encoderURL, configuration: configuration)
-            decoder = try MLModel(contentsOf: decoderURL, configuration: configuration)
             sourceTokenizerJSONURL = sourceJSON
             sourceTokenizerConfigURL = sourceConfig
             targetTokenizerJSONURL = targetJSON
             targetTokenizerConfigURL = targetConfig
+            encoderURLForLazyLoad = encoderURL
+            decoderURLForLazyLoad = decoderURL
             initializationError = nil
         } catch {
             sourceTokenizer = nil
             targetTokenizer = nil
+            encoderURLForLazyLoad = nil
+            decoderURLForLazyLoad = nil
             sourceTokenizerJSONURL = nil
             sourceTokenizerConfigURL = nil
             targetTokenizerJSONURL = nil
@@ -105,6 +107,15 @@ final class OpusMTEnglishArabicService: TextTranslationService {
         lock.lock()
         defer { lock.unlock() }
         if let initializationError { throw initializationError }
+        if encoder == nil || decoder == nil {
+            guard let encoderURLForLazyLoad, let decoderURLForLazyLoad else {
+                throw TranslationError.unavailable("لم يتم تضمين نماذج OPUS-MT داخل التطبيق.")
+            }
+            let configuration = MLModelConfiguration()
+            configuration.computeUnits = .all
+            encoder = try MLModel(contentsOf: encoderURLForLazyLoad, configuration: configuration)
+            decoder = try MLModel(contentsOf: decoderURLForLazyLoad, configuration: configuration)
+        }
         guard let encoder, let decoder, let sourceTokenizer, let targetTokenizer else {
             throw TranslationError.unavailable("لم يتم تحميل نموذج OPUS-MT المحلي.")
         }

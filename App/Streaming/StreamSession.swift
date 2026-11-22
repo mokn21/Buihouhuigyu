@@ -66,6 +66,7 @@ final class StreamSession {
 	@ObservationIgnored private var extraButtons: UInt32 = 0
 	@ObservationIgnored private var reconnectAttempt = 0
 	@ObservationIgnored private var reconnectWork: DispatchWorkItem?
+	@ObservationIgnored private var connectionTimeoutWork: DispatchWorkItem?
 
 	init(console: Console, settings: StreamSettings) {
 		self.console = console
@@ -84,6 +85,8 @@ final class StreamSession {
 
 	func start() {
 		guard handle == nil else { return }
+		connectionTimeoutWork?.cancel()
+		connectionTimeoutWork = nil
 		guard let renderer else {
 			state = .ended(error: "Metal isn't available on this device.")
 			return
@@ -196,6 +199,14 @@ final class StreamSession {
 			state = .ended(error: "Couldn't start the session (error \(err)).")
 			return
 		}
+		let timeout = DispatchWorkItem { [weak self] in
+			guard let self, case .connecting = self.state else { return }
+			log.error("Remote Play connection timed out for \(self.console.name, privacy: .public)")
+			self.teardown()
+			self.state = .ended(error: "انتهت مهلة الاتصال بـ Remote Play. تأكد من أن PS5 في وضع الاستعداد أو أن Remote Play متاح ثم حاول مرة أخرى.")
+		}
+		connectionTimeoutWork = timeout
+		DispatchQueue.main.asyncAfter(deadline: .now() + 20, execute: timeout)
 		UIApplication.shared.isIdleTimerDisabled = true
 		statsTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.updateStats() }
 	}
@@ -296,6 +307,8 @@ final class StreamSession {
 	}
 
 	private func teardown() {
+		connectionTimeoutWork?.cancel()
+		connectionTimeoutWork = nil
 		statsTimer?.invalidate()
 		statsTimer = nil
 		input.stop()
@@ -342,6 +355,8 @@ final class StreamSession {
 	private func handleEvent(_ type: CKEventType, code: Int32, message: String?) {
 		switch type {
 		case CK_EVENT_CONNECTED:
+			connectionTimeoutWork?.cancel()
+			connectionTimeoutWork = nil
 			reconnectAttempt = 0
 			state = .streaming
 		case CK_EVENT_LOGIN_PIN_REQUEST:
