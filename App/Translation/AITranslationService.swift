@@ -10,8 +10,10 @@ final class OpusMTEnglishArabicService: TextTranslationService {
     private let decoder: MLModel?
     private var sourceTokenizer: Tokenizer?
     private var targetTokenizer: Tokenizer?
-    private let sourceTokenizerURL: URL?
-    private let targetTokenizerURL: URL?
+    private let sourceTokenizerJSONURL: URL?
+    private let sourceTokenizerConfigURL: URL?
+    private let targetTokenizerJSONURL: URL?
+    private let targetTokenizerConfigURL: URL?
     private let initializationError: Error?
     private let maxTokens = 64
     private let padTokenID = 61246
@@ -21,27 +23,35 @@ final class OpusMTEnglishArabicService: TextTranslationService {
     private let lock = NSLock()
 
     init() {
+        sourceTokenizer = nil
+        targetTokenizer = nil
         do {
             guard
                 let encoderURL = Bundle.main.url(forResource: "OpusMTEnglishArabicEncoder", withExtension: "mlmodelc"),
                 let decoderURL = Bundle.main.url(forResource: "OpusMTEnglishArabicDecoder", withExtension: "mlmodelc"),
-                let sourceURL = Bundle.main.url(forResource: "source-tokenizer", withExtension: nil),
-                let targetURL = Bundle.main.url(forResource: "target-tokenizer", withExtension: nil)
+                let sourceJSON = Bundle.main.url(forResource: "source-tokenizer", withExtension: "json"),
+                let sourceConfig = Bundle.main.url(forResource: "source-tokenizer-config", withExtension: "json"),
+                let targetJSON = Bundle.main.url(forResource: "target-tokenizer", withExtension: "json"),
+                let targetConfig = Bundle.main.url(forResource: "target-tokenizer-config", withExtension: "json")
             else { throw TranslationError.unavailable("لم يتم تضمين ملفات tokenizer الخاصة بنموذج OPUS-MT.") }
             let configuration = MLModelConfiguration()
             configuration.computeUnits = .all
             encoder = try MLModel(contentsOf: encoderURL, configuration: configuration)
             decoder = try MLModel(contentsOf: decoderURL, configuration: configuration)
-            sourceTokenizerURL = sourceURL
-            targetTokenizerURL = targetURL
+            sourceTokenizerJSONURL = sourceJSON
+            sourceTokenizerConfigURL = sourceConfig
+            targetTokenizerJSONURL = targetJSON
+            targetTokenizerConfigURL = targetConfig
             initializationError = nil
         } catch {
             encoder = nil
             decoder = nil
             sourceTokenizer = nil
             targetTokenizer = nil
-            sourceTokenizerURL = nil
-            targetTokenizerURL = nil
+            sourceTokenizerJSONURL = nil
+            sourceTokenizerConfigURL = nil
+            targetTokenizerJSONURL = nil
+            targetTokenizerConfigURL = nil
             initializationError = error
         }
     }
@@ -58,11 +68,37 @@ final class OpusMTEnglishArabicService: TextTranslationService {
     private func loadTokenizersIfNeeded() async throws {
         if sourceTokenizer != nil, targetTokenizer != nil { return }
         if let initializationError { throw initializationError }
-        guard let sourceTokenizerURL, let targetTokenizerURL else {
+        guard let sourceTokenizerJSONURL, let sourceTokenizerConfigURL,
+              let targetTokenizerJSONURL, let targetTokenizerConfigURL else {
             throw TranslationError.unavailable("لم يتم تضمين ملفات tokenizer الخاصة بنموذج OPUS-MT.")
         }
-        sourceTokenizer = try await AutoTokenizer.from(modelFolder: sourceTokenizerURL, strict: false)
-        targetTokenizer = try await AutoTokenizer.from(modelFolder: targetTokenizerURL, strict: false)
+        let sourceFolder = try makeTokenizerFolder(
+            prefix: "source",
+            json: sourceTokenizerJSONURL,
+            config: sourceTokenizerConfigURL
+        )
+        let targetFolder = try makeTokenizerFolder(
+            prefix: "target",
+            json: targetTokenizerJSONURL,
+            config: targetTokenizerConfigURL
+        )
+        sourceTokenizer = try await AutoTokenizer.from(modelFolder: sourceFolder, strict: false)
+        targetTokenizer = try await AutoTokenizer.from(modelFolder: targetFolder, strict: false)
+    }
+
+    private func makeTokenizerFolder(prefix: String, json: URL, config: URL) throws -> URL {
+        let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("OrionSubtitles/\(prefix)-tokenizer", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let tokenizerJSON = root.appendingPathComponent("tokenizer.json")
+        let tokenizerConfig = root.appendingPathComponent("tokenizer_config.json")
+        if !FileManager.default.fileExists(atPath: tokenizerJSON.path) {
+            try FileManager.default.copyItem(at: json, to: tokenizerJSON)
+        }
+        if !FileManager.default.fileExists(atPath: tokenizerConfig.path) {
+            try FileManager.default.copyItem(at: config, to: tokenizerConfig)
+        }
+        return root
     }
 
     private func translateSynchronously(_ text: String) throws -> String {

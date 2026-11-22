@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 import torch
 from transformers import MarianMTModel, MarianTokenizer
@@ -68,6 +69,11 @@ def main() -> None:
         snapshot / 'vocab.json',
         args.output / 'target-tokenizer',
     )
+    for prefix in ('source-tokenizer', 'target-tokenizer'):
+        folder = args.output / prefix
+        shutil.copyfile(folder / 'tokenizer.json', args.output / f'{prefix}.json')
+        shutil.copyfile(folder / 'tokenizer_config.json', args.output / f'{prefix}-config.json')
+        shutil.rmtree(folder)
     model = MarianMTModel.from_pretrained(args.model).eval()
     model.config.use_cache = False
 
