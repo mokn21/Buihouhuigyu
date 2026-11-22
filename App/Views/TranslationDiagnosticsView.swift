@@ -17,6 +17,8 @@ struct TranslationDiagnosticsView: View {
     @State private var running = false
     @State private var status = "لم يبدأ الاختبار."
     @State private var elapsedMilliseconds: Double?
+    @State private var directStatus = "لم يبدأ الاختبار المباشر."
+    @State private var directRunning = false
 
     private let samples = ["Hello", "Press start", "The door is locked"]
 
@@ -33,6 +35,17 @@ struct TranslationDiagnosticsView: View {
 
                     if #available(iOS 18.0, *), let bridge = bridge as? AppleTranslationBridge {
                         diagnosticCard(title: "أحداث جلسة Apple الأخيرة", value: "\(bridge.diagnosticEvents.count) حدثًا مسجلًا")
+                        Text("عدد مرات كل مرحلة").font(.headline)
+                        ForEach(AppleTranslationDiagnosticPhase.allCases) { phase in
+                            HStack {
+                                Text(phase.rawValue)
+                                Spacer()
+                                Text("\(bridge.diagnosticCounts[phase.rawValue, default: 0])")
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                            }
+                            .font(.caption)
+                        }
                         ForEach(bridge.diagnosticEvents.suffix(20)) { event in
                             HStack(alignment: .top, spacing: 8) {
                                 Circle()
@@ -57,6 +70,20 @@ struct TranslationDiagnosticsView: View {
                             diagnosticCard(title: "الخطأ الأصلي", value: "type=\(failure.typeName)\ndomain=\(failure.domain ?? "غير متوفر")\ncode=\(failure.code.map(String.init) ?? "غير متوفر")\n\(failure.localizedDescription)\n\(failure.userInfo ?? "لا توجد userInfo آمنة")")
                         }
                     }
+
+                    Divider()
+                    Text("اختبار مباشر من جلسة TranslationSession")
+                        .font(.headline)
+                    Text("يتجاوز هذا الاختبار AsyncStream وTranslationCoordinator ويستعمل الجلسة الحالية مباشرة.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    HStack {
+                        Button("اختبار prepareTranslation") { runDirectPreparation() }
+                        Button("ترجمة مباشرة: Hello") { runDirectTranslation() }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(directRunning)
+                    diagnosticCard(title: "نتيجة الاختبار المباشر", value: directStatus)
 
                     Divider()
                     Text("اختبار Apple Translation الحقيقي")
@@ -157,6 +184,52 @@ struct TranslationDiagnosticsView: View {
                 await MainActor.run {
                     status = error.localizedDescription
                     running = false
+                }
+            }
+        }
+    }
+
+    private func runDirectPreparation() {
+        guard !directRunning else { return }
+        directRunning = true
+        directStatus = "جارٍ استدعاء prepareTranslation مباشرة…"
+        Task {
+            do {
+                guard #available(iOS 18.0, *), let bridge = bridge as? AppleTranslationBridge else {
+                    throw TranslationError.unavailable("يتطلب الاختبار المباشر iPadOS 18 وجلسة فعالة.")
+                }
+                try await bridge.directPrepareTranslation()
+                await MainActor.run {
+                    directStatus = "نجح prepareTranslation المباشر. راجع الأحداث والعدادات."
+                    directRunning = false
+                }
+            } catch {
+                await MainActor.run {
+                    directStatus = "فشل prepareTranslation: \(error.localizedDescription)"
+                    directRunning = false
+                }
+            }
+        }
+    }
+
+    private func runDirectTranslation() {
+        guard !directRunning else { return }
+        directRunning = true
+        directStatus = "جارٍ استدعاء session.translate مباشرة…"
+        Task {
+            do {
+                guard #available(iOS 18.0, *), let bridge = bridge as? AppleTranslationBridge else {
+                    throw TranslationError.unavailable("يتطلب الاختبار المباشر iPadOS 18 وجلسة فعالة.")
+                }
+                let translated = try await bridge.directTranslate("Hello")
+                await MainActor.run {
+                    directStatus = "نجحت الترجمة المباشرة: \(translated)"
+                    directRunning = false
+                }
+            } catch {
+                await MainActor.run {
+                    directStatus = "فشلت الترجمة المباشرة: \(error.localizedDescription)"
+                    directRunning = false
                 }
             }
         }
