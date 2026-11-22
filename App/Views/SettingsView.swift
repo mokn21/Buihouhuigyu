@@ -142,7 +142,7 @@ private struct TranslationSettingsForm: View {
 			} header: {
 				Text("الترجمة")
 			} footer: {
-				Text("تُحفظ هذه الإعدادات وتُطبق على OCR والبث التالي. يستخدم التطبيق نموذج OPUS-MT المحلي على iPadOS 18، مع Apple Translation كاحتياطي عند عدم توفر النموذج.")
+					Text("تُحفظ هذه الإعدادات وتُطبق على OCR والبث التالي. يرسل التطبيق النص الإنجليزي فقط إلى خادم الترجمة الخارجي عبر HTTPS، مع Apple Translation كاحتياطي عند عدم توفر الخادم.")
 			}
 	}
 }

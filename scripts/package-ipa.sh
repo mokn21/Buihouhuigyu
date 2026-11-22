@@ -12,6 +12,7 @@ cd "$ROOT"
 VERSION="${VERSION:-0.0.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-1}"
 BUNDLE_ID="${BUNDLE_ID:-com.orion.subtitles}"
+TRANSLATION_PROXY_URL="${TRANSLATION_PROXY_URL:-}"
 DERIVED="$ROOT/build/DerivedData-ipa"
 STAGE="$ROOT/build/ipa"
 OUT="$ROOT/build/Orion-Subtitles.ipa"
@@ -23,6 +24,7 @@ xcodebuild -project OrionSubtitles.xcodeproj -scheme OrionSubtitles -configurati
 	-destination 'generic/platform=iOS' -derivedDataPath "$DERIVED" \
 	CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" \
 	ORION_BUNDLE_ID="$BUNDLE_ID" MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+	ORION_TRANSLATION_PROXY_URL="$TRANSLATION_PROXY_URL" \
 	build
 
 rm -rf "$STAGE" "$OUT"

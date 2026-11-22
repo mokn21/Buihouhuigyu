@@ -23,29 +23,6 @@ jobs:
       - name: Install build tools
         run: brew install cmake ninja xcodegen
 
-      - name: Select supported Python for Core ML conversion
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Build the free OPUS-MT English-Arabic Core ML model
-        run: |
-          set -euo pipefail
-          python3 -m venv .venv-ai
-          source .venv-ai/bin/activate
-          python -m pip install --upgrade pip
-          python -m pip install 'transformers>=4.40,<5' 'torch>=2.2,<2.6' 'coremltools>=8,<9' sentencepiece safetensors
-          rm -rf App/AIModel
-          mkdir -p App/AIModel
-          python scripts/convert-opus-mt-coreml.py --output App/AIModel
-          test -d App/AIModel/OpusMTEnglishArabicEncoder.mlpackage
-          test -d App/AIModel/OpusMTEnglishArabicDecoder.mlpackage
-          test -f App/AIModel/source-tokenizer.json
-          test -f App/AIModel/target-tokenizer.json
-          test -f App/AIModel/source-tokenizer-config.json
-          test -f App/AIModel/target-tokenizer-config.json
-          du -sh App/AIModel
-
       - name: Verify source tree and dependencies
         run: |
           set -euo pipefail
@@ -85,6 +62,8 @@ jobs:
           VERSION: 0.1.0
           BUILD_NUMBER: ${{ github.run_number }}
           BUNDLE_ID: com.orion.subtitles
+          # Optional repository secret; never store a Gemini key here.
+          TRANSLATION_PROXY_URL: ${{ secrets.TRANSLATION_PROXY_URL }}
         run: |
           set -euo pipefail
           chmod +x scripts/build-chiaki.sh scripts/package-ipa.sh scripts/verify-ipad-ipa.sh
