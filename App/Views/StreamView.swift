@@ -11,7 +11,8 @@ struct StreamView: View {
 	@Environment(SettingsStore.self) private var settingsStore
 	@Environment(\.dismiss) private var dismiss
 	@Environment(\.scenePhase) private var scenePhase
-	@State private var session: StreamSession?
+		@State private var session: StreamSession?
+		@State private var translationBridge: AnyObject?
 	@State private var showMenu = false
 	@State private var showMenuButton = false
 	@State private var hideMenuButton: Task<Void, Never>?
@@ -92,7 +93,7 @@ struct StreamView: View {
 		}
 					.sheet(isPresented: $showTranslationDiagnostics) {
 					if let session {
-						TranslationDiagnosticsView(coordinator: session.translationCoordinator, bridge: session.translationCoordinator.appleTranslationBridge)
+							TranslationDiagnosticsView(coordinator: session.translationCoordinator, bridge: translationBridge)
 					}
 				}
 				.sheet(isPresented: $showRegionEditor) {
@@ -109,7 +110,7 @@ struct StreamView: View {
 						)
 					}
 				}
-			.modifier(AppleTranslationTaskModifier(bridge: session?.translationCoordinator.appleTranslationBridge))
+		.modifier(AppleTranslationTaskModifier(bridge: translationBridge))
 		}
 
 	private var content: some View {
@@ -193,21 +194,23 @@ struct StreamView: View {
 	// MARK: - Lifecycle
 
 	private func startSession() {
-		let session = StreamSession(console: console, settings: settingsStore.settings)
+			let session = StreamSession(console: console, settings: settingsStore.settings)
 		if let orientation = interfaceOrientation {
 			session.input.interfaceOrientation = orientation
 		}
 		session.input.onMenuCombo = { showMenu = true }
-			self.session = session
+				self.translationBridge = session.translationCoordinator.appleTranslationBridge
+				self.session = session
 			session.start()
 			session.setTranslationBlackMode(startInBlackMode)
 			session.translationCoordinator.start()
 		}
 
 		private func stop() {
-			session?.translationCoordinator.stop()
-			session?.stop()
-		session = nil
+				 session?.translationCoordinator.stop()
+				 session?.stop()
+			session = nil
+			translationBridge = nil
 		AppDelegate.setStreaming(false)
 	}
 

@@ -8,9 +8,12 @@ struct AppleTranslationTaskModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         guard #available(iOS 18.0, *), let bridge = bridge as? AppleTranslationBridge else { return AnyView(content) }
+        bridge.recordModifierMounted()
         return AnyView(
-            content.translationTask(bridge.configuration) { session in
+            content.translationTask(source: bridge.source, target: bridge.target) { session in
                 if #available(iOS 18.0, *) {
+                    bridge.recordTranslationTaskClosureStarted()
+                    defer { bridge.recordTranslationTaskClosureEnded() }
                     await bridge.run(session: session)
                 }
             }

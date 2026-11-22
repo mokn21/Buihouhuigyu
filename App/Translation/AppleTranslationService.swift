@@ -3,7 +3,10 @@ import Observation
 
 enum AppleTranslationDiagnosticPhase: String, CaseIterable, Identifiable {
     case configurationCreated
+    case modifierMounted
+    case bridgeReceivedByModifier
     case translationTaskStarted
+    case translationTaskClosureEnded
     case sessionReceived
     case workerStarted
     case sessionReady
@@ -178,6 +181,19 @@ final class AppleTranslationBridge: TextTranslationService {
         await process(session: session, generation: generation)
     }
 
+    func recordModifierMounted() {
+        record(.modifierMounted, message: "تم تركيب AppleTranslationTaskModifier على واجهة Remote Play.", succeeded: true)
+        record(.bridgeReceivedByModifier, message: "وصل bridge غير nil إلى AppleTranslationTaskModifier.", succeeded: true)
+    }
+
+    func recordTranslationTaskClosureStarted() {
+        record(.translationTaskStarted, message: "بدأ closure الخاص بـ translationTask.", succeeded: true)
+    }
+
+    func recordTranslationTaskClosureEnded() {
+        record(.translationTaskClosureEnded, message: "خرج closure الخاص بـ translationTask أو أُلغي.", succeeded: true)
+    }
+
     @available(iOS 18.0, *)
     private func process(session: TranslationSession, generation: UInt64) async {
         record(.workerStarted, message: "بدأ عامل استهلاك AsyncStream.", succeeded: true)
@@ -304,9 +320,7 @@ final class AppleTranslationBridge: TextTranslationService {
     }
 
     func directPrepareTranslation() async throws {
-        guard let session = activeSession else {
-            throw TranslationError.unavailable("لا توجد TranslationSession فعالة حاليًا. افتح Remote Play وانتظر ظهور sessionReceived.")
-        }
+        let session = try await waitForActiveSession()
         let generation = activeGeneration.map(String.init) ?? "none"
         record(.preparationStarted, message: "بدأ اختبار prepareTranslation المباشر.", succeeded: nil, details: "generation=\(generation)")
         do {
@@ -319,9 +333,7 @@ final class AppleTranslationBridge: TextTranslationService {
     }
 
     func directTranslate(_ text: String) async throws -> String {
-        guard let session = activeSession else {
-            throw TranslationError.unavailable("لا توجد TranslationSession فعالة حاليًا. افتح Remote Play وانتظر ظهور sessionReceived.")
-        }
+        let session = try await waitForActiveSession()
         let generation = activeGeneration.map(String.init) ?? "none"
         record(.translateStarted, message: "بدأ اختبار session.translate المباشر دون AsyncStream.", succeeded: nil, details: "generation=\(generation)")
         do {
@@ -336,6 +348,16 @@ final class AppleTranslationBridge: TextTranslationService {
             recordFailure(error, phase: .translateFinished, message: "فشل اختبار session.translate المباشر.")
             throw error
         }
+    }
+
+    private func waitForActiveSession() async throws -> TranslationSession {
+        for _ in 0..<200 {
+            if let activeSession { return activeSession }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        let error = TranslationError.failed("انتهت مهلة انتظار sessionReceived؛ لم تصل TranslationSession إلى bridge.")
+        recordFailure(error, phase: .timedOut, message: "انتهى انتظار الجلسة للاختبار المباشر.")
+        throw error
     }
 
     private func recordFailure(_ error: Error, phase: AppleTranslationDiagnosticPhase, message: String) {
