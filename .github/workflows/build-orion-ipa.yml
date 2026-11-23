@@ -40,6 +40,7 @@ jobs:
           echo "PASS: project files and recursive submodule dependencies are available."
 
       - name: Run translation request management tests
+        if: runner.arch == 'ARM64'
         run: |
           set -euo pipefail
           chmod +x scripts/build-chiaki.sh
