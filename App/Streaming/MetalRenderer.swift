@@ -152,7 +152,7 @@ final class MetalRenderer {
 		guard !paused, let layer, target.width > 0, target.height > 0, let cache = textureCache else {
 			if !didLogNoDrawable {
 				didLogNoDrawable = true
-				log.error("Metal display skipped: paused=\(paused), target=\(target.width)x\(target.height), layer=\(layer != nil), cache=\(textureCache != nil)")
+				log.error("Metal display skipped: paused=\(paused), target=\(target.width)x\(target.height), layer=\(layer != nil), cache=\(self.textureCache != nil)")
 			}
 			return
 		}

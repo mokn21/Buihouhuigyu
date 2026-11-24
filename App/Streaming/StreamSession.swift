@@ -396,7 +396,7 @@ final class StreamSession {
 		let decoded = decoder.decode(buf, count: size)
 		if !decoded, !loggedDecodeFailure {
 			loggedDecodeFailure = true
-			log.error("Remote Play first video decode failure callbackCount=\(videoCallbackCount) size=\(size) attempt=\(self.activeAttemptID?.uuidString ?? "none", privacy: .public)")
+			log.error("Remote Play first video decode failure callbackCount=\(self.videoCallbackCount) size=\(size) attempt=\(self.activeAttemptID?.uuidString ?? "none", privacy: .public)")
 		}
 		return decoded
 	}
