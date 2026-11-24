@@ -87,17 +87,17 @@ final class StreamSession {
 
 	func start() {
 		guard handle == nil else {
-			log.notice("Ignored duplicate StreamSession.start for \(console.name, privacy: .public)")
+			log.notice("Ignored duplicate StreamSession.start for \(self.console.name, privacy: .public)")
 			return
 		}
 		guard !startInProgress else {
-			log.notice("Ignored overlapping Remote Play start for \(console.name, privacy: .public)")
+			log.notice("Ignored overlapping Remote Play start for \(self.console.name, privacy: .public)")
 			return
 		}
 		startInProgress = true
 		let attemptID = UUID()
 		activeAttemptID = attemptID
-		log.notice("StreamSession.start attempt \(attemptID.uuidString, privacy: .public) for \(console.name, privacy: .public)")
+		log.notice("StreamSession.start attempt \(attemptID.uuidString, privacy: .public) for \(self.console.name, privacy: .public)")
 		defer { startInProgress = false }
 		connectionTimeoutWork?.cancel()
 		connectionTimeoutWork = nil
@@ -324,7 +324,7 @@ final class StreamSession {
 	}
 
 	private func teardown() {
-		log.notice("StreamSession.teardown for \(console.name, privacy: .public)")
+		log.notice("StreamSession.teardown for \(self.console.name, privacy: .public)")
 		connectionTimeoutWork?.cancel()
 		connectionTimeoutWork = nil
 		statsTimer?.invalidate()
