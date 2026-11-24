@@ -2,7 +2,25 @@ import XCTest
 @testable import OrionSubtitles
 
 final class TranslationRequestLedgerTests: XCTestCase {
-    func testRequestIsClaimedOnceAndCompletedOnce() {
+	func testRemotePlayLifecycleGateAllowsOnlyOneStart() {
+		var gate = RemotePlayLifecycleGate()
+		let id = try! XCTUnwrap(gate.begin())
+		XCTAssertNil(gate.begin())
+		gate.markActive(id)
+		XCTAssertNil(gate.begin())
+	}
+
+	func testRemotePlayLifecycleGateAllowsOneStopAndCleanRestart() {
+		var gate = RemotePlayLifecycleGate()
+		let id = try! XCTUnwrap(gate.begin())
+		gate.markActive(id)
+		XCTAssertEqual(gate.beginStop(), id)
+		XCTAssertNil(gate.beginStop())
+		gate.finishStop(id)
+		XCTAssertNotNil(gate.begin())
+	}
+
+	func testRequestIsClaimedOnceAndCompletedOnce() {
         var ledger = TranslationRequestLedger()
         let id = UUID()
 

@@ -67,6 +67,8 @@ final class StreamSession {
 	@ObservationIgnored private var reconnectAttempt = 0
 	@ObservationIgnored private var reconnectWork: DispatchWorkItem?
 	@ObservationIgnored private var connectionTimeoutWork: DispatchWorkItem?
+	@ObservationIgnored private var startInProgress = false
+	@ObservationIgnored private var activeAttemptID: UUID?
 
 	init(console: Console, settings: StreamSettings) {
 		self.console = console
@@ -84,10 +86,23 @@ final class StreamSession {
 	// MARK: - Lifecycle
 
 	func start() {
-		guard handle == nil else { return }
+		guard handle == nil else {
+			log.notice("Ignored duplicate StreamSession.start for \(console.name, privacy: .public)")
+			return
+		}
+		guard !startInProgress else {
+			log.notice("Ignored overlapping Remote Play start for \(console.name, privacy: .public)")
+			return
+		}
+		startInProgress = true
+		let attemptID = UUID()
+		activeAttemptID = attemptID
+		log.notice("StreamSession.start attempt \(attemptID.uuidString, privacy: .public) for \(console.name, privacy: .public)")
+		defer { startInProgress = false }
 		connectionTimeoutWork?.cancel()
 		connectionTimeoutWork = nil
 		guard let renderer else {
+			activeAttemptID = nil
 			state = .ended(error: "Metal isn't available on this device.")
 			return
 		}
@@ -171,6 +186,7 @@ final class StreamSession {
 		guard let created else {
 			ref.release()
 			selfRef = nil
+			activeAttemptID = nil
 			state = .ended(error: "Couldn't create the Remote Play session.")
 			return
 		}
@@ -200,7 +216,7 @@ final class StreamSession {
 			return
 		}
 		let timeout = DispatchWorkItem { [weak self] in
-			guard let self, case .connecting = self.state else { return }
+			guard let self, self.activeAttemptID == attemptID, case .connecting = self.state else { return }
 			log.error("Remote Play connection timed out for \(self.console.name, privacy: .public)")
 			self.teardown()
 			self.state = .ended(error: "انتهت مهلة الاتصال بـ Remote Play. تأكد من أن PS5 في وضع الاستعداد أو أن Remote Play متاح ثم حاول مرة أخرى.")
@@ -221,6 +237,7 @@ final class StreamSession {
 	/// Manual reconnect from the "Disconnected" screen
 	func reconnect() {
 		cancelReconnect()
+		if handle != nil { teardown() }
 		start()
 	}
 
@@ -307,6 +324,7 @@ final class StreamSession {
 	}
 
 	private func teardown() {
+		log.notice("StreamSession.teardown for \(console.name, privacy: .public)")
 		connectionTimeoutWork?.cancel()
 		connectionTimeoutWork = nil
 		statsTimer?.invalidate()
@@ -323,6 +341,8 @@ final class StreamSession {
 			latestFrame = nil
 		selfRef?.release()
 		selfRef = nil
+		activeAttemptID = nil
+		startInProgress = false
 		UIApplication.shared.isIdleTimerDisabled = false
 	}
 
@@ -358,6 +378,7 @@ final class StreamSession {
 			connectionTimeoutWork?.cancel()
 			connectionTimeoutWork = nil
 			reconnectAttempt = 0
+			log.notice("Remote Play connected for \(self.console.name, privacy: .public)")
 			state = .streaming
 		case CK_EVENT_LOGIN_PIN_REQUEST:
 			state = .needsPIN(incorrect: code != 0)
@@ -366,6 +387,10 @@ final class StreamSession {
 		case CK_EVENT_KEYBOARD_CLOSE:
 			keyboardText = nil
 		case CK_EVENT_QUIT:
+			if reconnectWork != nil {
+				log.notice("Ignored duplicate Remote Play quit while reconnect is already scheduled")
+				return
+			}
 			// CHIAKI_QUIT_REASON_STOPPED (1) and ..._REMOTE_SHUTDOWN (12) are normal exits
 			let wasError = code != 1 && code != 12
 			// Only retry a connection that was working (or a retry that just failed)
@@ -381,7 +406,11 @@ final class StreamSession {
 				let attempt = reconnectAttempt
 				log.notice("Connection lost (\(message ?? "?", privacy: .public)), reconnect attempt \(attempt)")
 				state = .reconnecting(attempt: attempt)
-				let work = DispatchWorkItem { [weak self] in self?.start() }
+				let work = DispatchWorkItem { [weak self] in
+					guard let self else { return }
+					self.reconnectWork = nil
+					self.start()
+				}
 				reconnectWork = work
 				// 1 s, 2 s, 4 s
 				DispatchQueue.main.asyncAfter(deadline: .now() + pow(2, Double(attempt - 1)), execute: work)

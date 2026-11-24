@@ -13,6 +13,9 @@ struct StreamView: View {
 	@Environment(\.scenePhase) private var scenePhase
 		@State private var session: StreamSession?
 		@State private var translationBridge: AnyObject?
+		@State private var lifecycleGate = RemotePlayLifecycleGate()
+		@State private var pendingDisappearStop: Task<Void, Never>?
+		@State private var isViewVisible = false
 	@State private var showMenu = false
 	@State private var showMenuButton = false
 	@State private var hideMenuButton: Task<Void, Never>?
@@ -62,10 +65,21 @@ struct StreamView: View {
 		.persistentSystemOverlays(.hidden)
 		.defersSystemGestures(on: .all)
 		// The session itself starts from updateFolded, once we know we're on a usable screen
-		.onAppear { AppDelegate.setStreaming(true) }
+		.onAppear {
+			isViewVisible = true
+			pendingDisappearStop?.cancel()
+			pendingDisappearStop = nil
+			AppDelegate.setStreaming(true)
+		}
 		.onDisappear {
 			quickBarHideTask?.cancel()
-			stop()
+			isViewVisible = false
+			pendingDisappearStop?.cancel()
+			pendingDisappearStop = Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(750))
+				guard !Task.isCancelled, !isViewVisible else { return }
+				stop()
+			}
 		}
 		.onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
 			// A flip between the two landscapes keeps the same window size, so pick
@@ -194,7 +208,12 @@ struct StreamView: View {
 	// MARK: - Lifecycle
 
 	private func startSession() {
-			let session = StreamSession(console: console, settings: settingsStore.settings)
+		guard let attemptID = lifecycleGate.begin() else {
+			log.notice("Ignored duplicate StreamView start request for \(console.name, privacy: .public)")
+			return
+		}
+		log.notice("Starting Remote Play attempt \(attemptID.uuidString, privacy: .public) for \(console.name, privacy: .public)")
+				let session = StreamSession(console: console, settings: settingsStore.settings)
 		if let orientation = interfaceOrientation {
 			session.input.interfaceOrientation = orientation
 		}
@@ -204,15 +223,22 @@ struct StreamView: View {
 			session.start()
 			session.setTranslationBlackMode(startInBlackMode)
 			session.translationCoordinator.start()
+		lifecycleGate.markActive(attemptID)
 		}
 
 		private func stop() {
+			guard let stopID = lifecycleGate.beginStop() else {
+				log.notice("Ignored duplicate Remote Play stop request for \(console.name, privacy: .public)")
+				return
+			}
+			log.notice("Stopping Remote Play lifecycle \(stopID.uuidString, privacy: .public) for \(console.name, privacy: .public)")
 				 session?.translationCoordinator.stop()
 				 session?.stop()
 			session = nil
 			translationBridge = nil
 		AppDelegate.setStreaming(false)
-	}
+		lifecycleGate.finishStop(stopID)
+		}
 
 	/// On a foldable, streaming only happens on the inner screen: we wait for the
 	/// unfold before connecting, and pause if it's folded mid-session.
