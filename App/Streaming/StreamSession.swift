@@ -69,6 +69,8 @@ final class StreamSession {
 	@ObservationIgnored private var connectionTimeoutWork: DispatchWorkItem?
 	@ObservationIgnored private var startInProgress = false
 	@ObservationIgnored private var activeAttemptID: UUID?
+	@ObservationIgnored private var loggedFirstVideo = false
+	@ObservationIgnored private var loggedFirstEvent = false
 
 	init(console: Console, settings: StreamSettings) {
 		self.console = console
@@ -97,6 +99,8 @@ final class StreamSession {
 		startInProgress = true
 		let attemptID = UUID()
 		activeAttemptID = attemptID
+		loggedFirstVideo = false
+		loggedFirstEvent = false
 		log.notice("StreamSession.start attempt \(attemptID.uuidString, privacy: .public) for \(self.console.name, privacy: .public)")
 		defer { startInProgress = false }
 		connectionTimeoutWork?.cancel()
@@ -113,14 +117,16 @@ final class StreamSession {
 
 		let codec = settings.effectiveCodec
 		let decoder = VideoDecoder(hevc: codec == .h265, tenBit: settings.hdr)
-			decoder.onFrame = { [weak renderer, weak self] frame in
-				renderer?.display(frame)
-					guard let self else { return }
-					self.latestFrame = frame
-					Task { @MainActor in
-					self.translationCoordinator.submit(pixelBuffer: frame)
-				}
+		decoder.onFrame = { [weak renderer, weak self] frame in
+			renderer?.display(frame)
+			guard let self else { return }
+			// SwiftUI observation and OCR state are main-actor state. The
+			// decoder callback is a Chiaki/VideoToolbox thread.
+			Task { @MainActor in
+				self.latestFrame = frame
+				self.translationCoordinator.submit(pixelBuffer: frame)
 			}
+		}
 		self.decoder = decoder
 		renderer.configure(hdr: settings.hdr, displayMode: settings.displayMode, bicubic: settings.sharpUpscaling)
 		renderer.setPaused(paused)
@@ -153,6 +159,10 @@ final class StreamSession {
 		callbacks.on_event = { user, type, code, message in
 			guard let user else { return }
 			let session = Unmanaged<StreamSession>.fromOpaque(user).takeUnretainedValue()
+			if !session.loggedFirstEvent {
+				session.loggedFirstEvent = true
+				log.notice("Remote Play first Chiaki event type=\(type) attempt=\(session.activeAttemptID?.uuidString ?? "none", privacy: .public)")
+			}
 			let text = message.map { String(cString: $0) }
 			DispatchQueue.main.async { session.handleEvent(type, code: code, message: text) }
 		}
@@ -181,9 +191,11 @@ final class StreamSession {
 
 		let created: OpaquePointer? = console.host.withCString { host in
 			config.host = host
+			log.notice("Creating Chiaki session attempt=\(attemptID.uuidString, privacy: .public)")
 			return ck_session_create(&config, &callbacks)
 		}
 		guard let created else {
+			log.error("Chiaki session creation returned nil attempt=\(attemptID.uuidString, privacy: .public)")
 			ref.release()
 			selfRef = nil
 			activeAttemptID = nil
@@ -209,8 +221,10 @@ final class StreamSession {
 		audio.start(session: created)
 		audio.muted = paused
 
+		log.notice("Starting Chiaki session attempt=\(attemptID.uuidString, privacy: .public)")
 		let err = ck_session_start(created)
 		if err != 0 {
+			log.error("Chiaki session start failed code=\(err) attempt=\(attemptID.uuidString, privacy: .public)")
 			teardown()
 			state = .ended(error: "Couldn't start the session (error \(err)).")
 			return
@@ -332,6 +346,7 @@ final class StreamSession {
 		input.stop()
 		audio.stop()
 		if let handle {
+			log.notice("Destroying Chiaki session attempt=\(activeAttemptID?.uuidString ?? "none", privacy: .public)")
 			// Stops and joins chiaki's threads: no callbacks after this
 			ck_session_destroy(handle)
 		}
@@ -349,6 +364,10 @@ final class StreamSession {
 	// MARK: - Callbacks (chiaki threads)
 
 	private func handleVideo(_ buf: UnsafePointer<UInt8>, _ size: Int, _ lost: Int32) -> Bool {
+		if !loggedFirstVideo {
+			loggedFirstVideo = true
+			log.notice("Remote Play first video callback size=\(size) attempt=\(activeAttemptID?.uuidString ?? "none", privacy: .public)")
+		}
 		if lost > 0 { lostFrames &+= lost }
 		guard let decoder else { return true }
 		return decoder.decode(buf, count: size)

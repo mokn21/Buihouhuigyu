@@ -17,6 +17,9 @@ final class VideoDecoder {
 	private var session: VTDecompressionSession?
 	private var format: CMVideoFormatDescription?
 	private var parameterSets: [Data] = []
+	/// Decode callbacks arrive from Chiaki while teardown runs on the main thread.
+	/// Serializing these operations prevents invalidate/rebuild from racing decode.
+	private let decodeLock = NSLock()
 
 	// Stats, read approximately from the main thread
 	private(set) var decodedFrames: Int = 0
@@ -32,6 +35,12 @@ final class VideoDecoder {
 	deinit { invalidate() }
 
 	func invalidate() {
+		decodeLock.lock()
+		defer { decodeLock.unlock() }
+		invalidateLocked()
+	}
+
+	private func invalidateLocked() {
 		if let session {
 			VTDecompressionSessionWaitForAsynchronousFrames(session)
 			VTDecompressionSessionInvalidate(session)
@@ -41,6 +50,8 @@ final class VideoDecoder {
 
 	/// Returns false if the frame couldn't be decoded and an IDR frame should be requested.
 	func decode(_ bytes: UnsafePointer<UInt8>, count: Int) -> Bool {
+		decodeLock.lock()
+		defer { decodeLock.unlock() }
 		let nals = Self.splitAnnexB(bytes, count: count)
 		var newParams: [Int: Data] = [:]
 		var payload: [Range<Int>] = []
@@ -100,7 +111,7 @@ final class VideoDecoder {
 			log.error("Decode failed: \(status)")
 			if status == kVTInvalidSessionErr || status == kVTVideoDecoderMalfunctionErr {
 				// e.g. after the app was backgrounded: start over from the next keyframe
-				invalidate()
+				invalidateLocked()
 			}
 			return false
 		}
