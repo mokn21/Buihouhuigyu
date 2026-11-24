@@ -99,6 +99,7 @@ final class VideoDecoder {
 			guard let self else { return }
 			guard status == noErr, let imageBuffer else {
 				self.failedFrames += 1
+				log.error("VideoToolbox output failed domain=VideoToolbox code=\(status)")
 				return
 			}
 			self.decodedFrames += 1
@@ -108,7 +109,7 @@ final class VideoDecoder {
 
 		if status != noErr {
 			failedFrames += 1
-			log.error("Decode failed: \(status)")
+				log.error("VideoToolbox decode failed domain=VideoToolbox code=\(status)")
 			if status == kVTInvalidSessionErr || status == kVTVideoDecoderMalfunctionErr {
 				// e.g. after the app was backgrounded: start over from the next keyframe
 				invalidateLocked()
@@ -145,7 +146,7 @@ final class VideoDecoder {
 				parameterSetSizes: sizes, nalUnitHeaderLength: 4, formatDescriptionOut: &newFormat)
 		}
 		guard status == noErr, let newFormat else {
-			log.error("Format description failed: \(status)")
+				log.error("VideoToolbox format description failed domain=VideoToolbox code=\(status)")
 			return false
 		}
 
@@ -172,7 +173,7 @@ final class VideoDecoder {
 			allocator: kCFAllocatorDefault, formatDescription: format, decoderSpecification: nil,
 			imageBufferAttributes: attributes as CFDictionary, outputCallback: nil, decompressionSessionOut: &newSession)
 		guard status == noErr, let newSession else {
-			log.error("VTDecompressionSessionCreate failed: \(status)")
+				log.error("VideoToolbox session create failed domain=VideoToolbox code=\(status)")
 			return false
 		}
 		VTSessionSetProperty(newSession, key: kVTDecompressionPropertyKey_RealTime, value: kCFBooleanTrue)

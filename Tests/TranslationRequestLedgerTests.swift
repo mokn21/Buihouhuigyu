@@ -44,8 +44,8 @@ final class TranslationRequestLedgerTests: XCTestCase {
         XCTAssertTrue(ledger.complete(id))
     }
 
-    func testCompletedRequestCannotBeEnqueuedAgain() {
-        var ledger = TranslationRequestLedger()
+	func testCompletedRequestCannotBeEnqueuedAgain() {
+		var ledger = TranslationRequestLedger()
         let id = UUID()
 
         ledger.enqueue(id)
@@ -53,7 +53,31 @@ final class TranslationRequestLedgerTests: XCTestCase {
         XCTAssertTrue(ledger.complete(id))
         ledger.enqueue(id)
 
-        XCTAssertFalse(ledger.pending.contains(id))
-        XCTAssertFalse(ledger.claim(id))
-    }
+		XCTAssertFalse(ledger.pending.contains(id))
+		XCTAssertFalse(ledger.claim(id))
+	}
+
+	func testVideoAccessUnitSplitsThreeAndFourByteAnnexBStartCodes() {
+		let bytes: [UInt8] = [
+			0, 0, 0, 1, 0x67, 0x64, 0,
+			0, 0, 1, 0x68, 0xee,
+			0, 0, 0, 1, 0x65, 0x88, 0x84,
+		]
+		let ranges = bytes.withUnsafeBufferPointer { buffer in
+			VideoDecoder.splitAnnexB(buffer.baseAddress!, count: buffer.count)
+		}
+		XCTAssertEqual(ranges.map { Array(bytes[$0]) }, [
+			[0x67, 0x64, 0],
+			[0x68, 0xee],
+			[0x65, 0x88, 0x84],
+		])
+	}
+
+	func testVideoAccessUnitWithNoStartCodeProducesNoFrames() {
+		let bytes: [UInt8] = [0x67, 0x64, 0, 0x65]
+		let ranges = bytes.withUnsafeBufferPointer { buffer in
+			VideoDecoder.splitAnnexB(buffer.baseAddress!, count: buffer.count)
+		}
+		XCTAssertTrue(ranges.isEmpty)
+	}
 }

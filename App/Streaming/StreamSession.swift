@@ -71,6 +71,10 @@ final class StreamSession {
 	@ObservationIgnored private var activeAttemptID: UUID?
 	@ObservationIgnored private var loggedFirstVideo = false
 	@ObservationIgnored private var loggedFirstEvent = false
+	@ObservationIgnored private var loggedFirstDecodedFrame = false
+	@ObservationIgnored private var loggedFirstFrameOnMain = false
+	@ObservationIgnored private var loggedDecodeFailure = false
+	@ObservationIgnored private var videoCallbackCount = 0
 
 	init(console: Console, settings: StreamSettings) {
 		self.console = console
@@ -101,6 +105,10 @@ final class StreamSession {
 		activeAttemptID = attemptID
 		loggedFirstVideo = false
 		loggedFirstEvent = false
+		loggedFirstDecodedFrame = false
+		loggedFirstFrameOnMain = false
+		loggedDecodeFailure = false
+		videoCallbackCount = 0
 		log.notice("StreamSession.start attempt \(attemptID.uuidString, privacy: .public) for \(self.console.name, privacy: .public)")
 		defer { startInProgress = false }
 		connectionTimeoutWork?.cancel()
@@ -120,14 +128,27 @@ final class StreamSession {
 		decoder.onFrame = { [weak renderer, weak self] frame in
 			renderer?.display(frame)
 			guard let self else { return }
+			if !self.loggedFirstDecodedFrame {
+				self.loggedFirstDecodedFrame = true
+				log.notice("Remote Play first decoded CVPixelBuffer size=\(CVPixelBufferGetWidth(frame))x\(CVPixelBufferGetHeight(frame)) attempt=\(self.activeAttemptID?.uuidString ?? "none", privacy: .public)")
+			}
 			// SwiftUI observation and OCR state are main-actor state. The
 			// decoder callback is a Chiaki/VideoToolbox thread.
 			Task { @MainActor in
 				self.latestFrame = frame
+				if !self.loggedFirstFrameOnMain {
+					self.loggedFirstFrameOnMain = true
+					log.notice("Remote Play first latestFrame update on MainActor attempt=\(self.activeAttemptID?.uuidString ?? "none", privacy: .public)")
+				}
 				self.translationCoordinator.submit(pixelBuffer: frame)
 			}
 		}
 		self.decoder = decoder
+		renderer.resetDiagnostics()
+		renderer.onFirstPresented = { [weak self] in
+			guard let self else { return }
+			log.notice("Remote Play first Metal frame committed attempt=\(self.activeAttemptID?.uuidString ?? "none", privacy: .public)")
+		}
 		renderer.configure(hdr: settings.hdr, displayMode: settings.displayMode, bicubic: settings.sharpUpscaling)
 		renderer.setPaused(paused)
 
@@ -365,13 +386,19 @@ final class StreamSession {
 	// MARK: - Callbacks (chiaki threads)
 
 	private func handleVideo(_ buf: UnsafePointer<UInt8>, _ size: Int, _ lost: Int32) -> Bool {
+		videoCallbackCount += 1
 		if !loggedFirstVideo {
 			loggedFirstVideo = true
 			log.notice("Remote Play first video callback size=\(size) attempt=\(self.activeAttemptID?.uuidString ?? "none", privacy: .public)")
 		}
 		if lost > 0 { lostFrames &+= lost }
 		guard let decoder else { return true }
-		return decoder.decode(buf, count: size)
+		let decoded = decoder.decode(buf, count: size)
+		if !decoded, !loggedDecodeFailure {
+			loggedDecodeFailure = true
+			log.error("Remote Play first video decode failure callbackCount=\(videoCallbackCount) size=\(size) attempt=\(self.activeAttemptID?.uuidString ?? "none", privacy: .public)")
+		}
+		return decoded
 	}
 
 	private func handleRumble(_ left: UInt8, _ right: UInt8) {

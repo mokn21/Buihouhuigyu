@@ -38,6 +38,12 @@ final class MetalRenderer {
 
 	/// Frames presented (stats)
 	private(set) var presentedFrames = 0
+	/// Called once for the first frame that reaches commandBuffer.commit().
+	var onFirstPresented: (() -> Void)?
+	private var didPresentFirstFrame = false
+	private var didLogDrawableSize = false
+	private var didLogNoDrawable = false
+	private var didLogTextureFailure = false
 	/// The screen's current refresh rate, from the display link (stats)
 	var displayHz: Double = 0
 
@@ -87,6 +93,15 @@ final class MetalRenderer {
 		}
 	}
 
+	/// Starts a fresh per-connection rendering trace without changing rendering settings.
+	func resetDiagnostics() {
+		presentedFrames = 0
+		didPresentFirstFrame = false
+		didLogDrawableSize = false
+		didLogNoDrawable = false
+		didLogTextureFailure = false
+	}
+
 	func setDisplayMode(_ mode: DisplayMode) {
 		lock.withLock { displayMode = mode }
 	}
@@ -99,6 +114,10 @@ final class MetalRenderer {
 		lock.withLock {
 			drawableSize = size
 			layer?.drawableSize = size
+		}
+		if !didLogDrawableSize, size.width > 0, size.height > 0 {
+			didLogDrawableSize = true
+			log.notice("Metal drawable became ready size=\(Int(size.width))x\(Int(size.height))")
 		}
 	}
 
@@ -130,7 +149,13 @@ final class MetalRenderer {
 		let paused = self.paused
 		lock.unlock()
 
-		guard !paused, let layer, target.width > 0, target.height > 0, let cache = textureCache else { return }
+		guard !paused, let layer, target.width > 0, target.height > 0, let cache = textureCache else {
+			if !didLogNoDrawable {
+				didLogNoDrawable = true
+				log.error("Metal display skipped: paused=\(paused), target=\(target.width)x\(target.height), layer=\(layer != nil), cache=\(textureCache != nil)")
+			}
+			return
+		}
 
 		let pixelFormat = CVPixelBufferGetPixelFormatType(pixelBuffer)
 		let tenBit = pixelFormat == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
@@ -139,10 +164,16 @@ final class MetalRenderer {
 			|| pixelFormat == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange
 
 		guard let luma = makeTexture(pixelBuffer, plane: 0, format: tenBit ? .r16Unorm : .r8Unorm, cache: cache),
-			let chroma = makeTexture(pixelBuffer, plane: 1, format: tenBit ? .rg16Unorm : .rg8Unorm, cache: cache),
-			let lumaTex = CVMetalTextureGetTexture(luma),
-			let chromaTex = CVMetalTextureGetTexture(chroma)
-		else { return }
+				let chroma = makeTexture(pixelBuffer, plane: 1, format: tenBit ? .rg16Unorm : .rg8Unorm, cache: cache),
+				let lumaTex = CVMetalTextureGetTexture(luma),
+				let chromaTex = CVMetalTextureGetTexture(chroma)
+			else {
+				if !didLogTextureFailure {
+					didLogTextureFailure = true
+					log.error("Metal display skipped: CVMetalTexture creation failed pixelFormat=\(pixelFormat)")
+				}
+				return
+			}
 
 		// Colour metadata from the stream
 		let transfer = CVBufferCopyAttachment(pixelBuffer, kCVImageBufferTransferFunctionKey, nil) as? String
@@ -178,7 +209,13 @@ final class MetalRenderer {
 			matrix: bt2020 ? 1 : 0, transferMode: transferMode,
 			bicubic: (bicubic && scale > 1.01) ? 1 : 0, fullRange: fullRange ? 1 : 0)
 
-		guard let drawable = layer.nextDrawable(), let commandBuffer = queue.makeCommandBuffer() else { return }
+		guard let drawable = layer.nextDrawable(), let commandBuffer = queue.makeCommandBuffer() else {
+			if !didLogNoDrawable {
+				didLogNoDrawable = true
+				log.error("Metal display skipped: nextDrawable or commandBuffer returned nil")
+			}
+			return
+		}
 		// The layer's pixel format can lag a settings change by a frame
 		let pipeline = drawable.texture.pixelFormat == .bgr10a2Unorm ? pipelineHDR : pipelineSDR
 
@@ -205,6 +242,10 @@ final class MetalRenderer {
 		commandBuffer.present(drawable)
 		commandBuffer.commit()
 		presentedFrames += 1
+		if !didPresentFirstFrame {
+			didPresentFirstFrame = true
+			onFirstPresented?()
+		}
 	}
 
 	private func makeTexture(_ pb: CVPixelBuffer, plane: Int, format: MTLPixelFormat, cache: CVMetalTextureCache) -> CVMetalTexture? {
