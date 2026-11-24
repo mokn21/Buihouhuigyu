@@ -161,7 +161,8 @@ final class StreamSession {
 			let session = Unmanaged<StreamSession>.fromOpaque(user).takeUnretainedValue()
 			if !session.loggedFirstEvent {
 				session.loggedFirstEvent = true
-				log.notice("Remote Play first Chiaki event type=\(type) attempt=\(session.activeAttemptID?.uuidString ?? "none", privacy: .public)")
+				let eventName = String(describing: type)
+				log.notice("Remote Play first Chiaki event type=\(eventName, privacy: .public) attempt=\(session.activeAttemptID?.uuidString ?? "none", privacy: .public)")
 			}
 			let text = message.map { String(cString: $0) }
 			DispatchQueue.main.async { session.handleEvent(type, code: code, message: text) }
@@ -346,14 +347,14 @@ final class StreamSession {
 		input.stop()
 		audio.stop()
 		if let handle {
-			log.notice("Destroying Chiaki session attempt=\(activeAttemptID?.uuidString ?? "none", privacy: .public)")
+			log.notice("Destroying Chiaki session attempt=\(self.activeAttemptID?.uuidString ?? "none", privacy: .public)")
 			// Stops and joins chiaki's threads: no callbacks after this
 			ck_session_destroy(handle)
 		}
 		handle = nil
-			decoder?.invalidate()
-			decoder = nil
-			latestFrame = nil
+		decoder?.invalidate()
+		decoder = nil
+		latestFrame = nil
 		selfRef?.release()
 		selfRef = nil
 		activeAttemptID = nil
@@ -366,7 +367,7 @@ final class StreamSession {
 	private func handleVideo(_ buf: UnsafePointer<UInt8>, _ size: Int, _ lost: Int32) -> Bool {
 		if !loggedFirstVideo {
 			loggedFirstVideo = true
-			log.notice("Remote Play first video callback size=\(size) attempt=\(activeAttemptID?.uuidString ?? "none", privacy: .public)")
+			log.notice("Remote Play first video callback size=\(size) attempt=\(self.activeAttemptID?.uuidString ?? "none", privacy: .public)")
 		}
 		if lost > 0 { lostFrames &+= lost }
 		guard let decoder else { return true }
