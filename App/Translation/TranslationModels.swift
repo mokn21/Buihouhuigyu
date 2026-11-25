@@ -1,6 +1,21 @@
 import CoreGraphics
 import Foundation
 
+struct OCRTextObservation: Equatable, Identifiable {
+    let id: UUID
+    let text: String
+    /// Vision normalized coordinates. Origin is bottom-left; values are 0...1.
+    let boundingBox: CGRect
+    let confidence: Float
+
+    init(id: UUID = UUID(), text: String, boundingBox: CGRect, confidence: Float) {
+        self.id = id
+        self.text = text
+        self.boundingBox = boundingBox
+        self.confidence = confidence
+    }
+}
+
 struct CaptureRegion: Equatable, Codable {
     /// Vision normalized coordinates: origin is bottom-left, values are 0...1.
     var x: Double = 0
@@ -45,10 +60,21 @@ struct LatencyMetrics: Equatable {
     }
 }
 
+struct OCRResult: Equatable {
+    let observations: [OCRTextObservation]
+    let capturedAt: ContinuousClock.Instant
+    let startedAt: ContinuousClock.Instant
+    let finishedAt: ContinuousClock.Instant
+    var text: String { observations.map(\.text).joined(separator: " ") }
+}
+
 struct TranslationEntry: Identifiable, Equatable {
     let id = UUID()
     let sourceText: String
     let translatedText: String
+    /// The original text position in Vision normalized coordinates.
+    let boundingBox: CGRect
+    let confidence: Float
     let createdAt = Date()
     let metrics: LatencyMetrics
 }

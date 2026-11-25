@@ -2,17 +2,11 @@ import CoreVideo
 import Foundation
 import Vision
 
-struct OCRResult: Equatable {
-    let text: String
-    let capturedAt: ContinuousClock.Instant
-    let startedAt: ContinuousClock.Instant
-    let finishedAt: ContinuousClock.Instant
-}
-
 final class OCRService {
     var recognitionLevel: VNRequestTextRecognitionLevel = .fast
     var region: CaptureRegion = .fullScreen
     var sourceLanguage = "en-US"
+    var minimumConfidence: Float = 0.35
 
     func recognize(pixelBuffer: CVPixelBuffer, capturedAt: ContinuousClock.Instant = ContinuousClock.now) async -> OCRResult? {
         let startedAt = ContinuousClock.now
@@ -33,13 +27,16 @@ final class OCRService {
         // Vision uses the ROI as a processing hint. Filter the observations a
         // second time so text whose bounding box lies outside the user's saved
         // rectangle can never reach translation.
-        let text = (request.results ?? [])
-            .filter { selectedRegion.cgRect.contains(CGPoint(x: $0.boundingBox.midX, y: $0.boundingBox.midY)) }
-            .compactMap { $0.topCandidates(1).first?.string }
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return nil }
-        return OCRResult(text: text, capturedAt: capturedAt, startedAt: startedAt, finishedAt: ContinuousClock.now)
+        let observations = (request.results ?? []).compactMap { observation -> OCRTextObservation? in
+            guard selectedRegion.cgRect.contains(CGPoint(x: observation.boundingBox.midX, y: observation.boundingBox.midY)),
+                  let candidate = observation.topCandidates(1).first,
+                  candidate.confidence >= minimumConfidence else { return nil }
+            let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            return OCRTextObservation(text: text, boundingBox: observation.boundingBox, confidence: candidate.confidence)
+        }
+        guard !observations.isEmpty else { return nil }
+        return OCRResult(observations: observations, capturedAt: capturedAt, startedAt: startedAt, finishedAt: ContinuousClock.now)
     }
 }
 

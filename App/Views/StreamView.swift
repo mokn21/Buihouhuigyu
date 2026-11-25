@@ -473,30 +473,48 @@ struct StreamView: View {
 
 		@ViewBuilder
 		private func translationOverlay(for session: StreamSession) -> some View {
-			if let entry = session.translationCoordinator.latestEntry,
-			   session.translationCoordinator.state == .running || session.translationCoordinator.state == .paused {
-				GeometryReader { geo in
-					VStack(spacing: 4) {
-						Text(entry.translatedText)
-							.font(.system(size: session.settings.translationFontSize, weight: .semibold))
-							.multilineTextAlignment(.center)
-							.environment(\.layoutDirection, .rightToLeft)
-						Text(entry.sourceText)
-							.font(.system(size: max(12, session.settings.translationFontSize * 0.45)))
-							.foregroundStyle(.white.opacity(0.7))
+				if session.translationCoordinator.state == .running || session.translationCoordinator.state == .paused {
+					GeometryReader { geo in
+						ForEach(session.translationCoordinator.visibleEntries) { entry in
+							let frame = spatialFrame(for: entry.boundingBox, in: geo.size)
+							VStack(spacing: 4) {
+								Text(entry.translatedText)
+									.font(.system(size: session.settings.translationFontSize, weight: .semibold))
+									.multilineTextAlignment(.center)
+									.environment(\.layoutDirection, .rightToLeft)
+								Text(entry.sourceText)
+									.font(.system(size: max(12, session.settings.translationFontSize * 0.45)))
+									.foregroundStyle(.white.opacity(0.7))
+							}
+							.foregroundStyle(translationColor(session.settings.translationTextColor))
+							.padding(.horizontal, 18)
+							.padding(.vertical, 10)
+							.background(translationColor(session.settings.translationBackgroundColor).opacity(session.settings.translationBackgroundOpacity), in: RoundedRectangle(cornerRadius: 14))
+							.frame(width: max(90, min(frame.width, geo.size.width - 24)))
+							.position(x: frame.midX, y: frame.midY)
 					}
-						.foregroundStyle(translationColor(session.settings.translationTextColor))
-						.padding(.horizontal, 18)
-						.padding(.vertical, 10)
-						.background(translationColor(session.settings.translationBackgroundColor).opacity(session.settings.translationBackgroundOpacity), in: RoundedRectangle(cornerRadius: 14))
-					.frame(maxWidth: min(geo.size.width - 80, 900))
-					.position(x: geo.size.width / 2, y: geo.size.height * session.settings.translationPositionY)
-				}
+					}
 				.allowsHitTesting(false)
+				}
 			}
-		}
 
-		private func blackTranslationScreen(for session: StreamSession) -> some View {
+			/// Converts Vision's bottom-left normalized coordinates into the displayed
+			/// 16:9 video rectangle, including iPad letterboxing.
+			private func spatialFrame(for visionRect: CGRect, in size: CGSize) -> CGRect {
+				guard size.width > 0, size.height > 0 else { return .zero }
+				let videoAspect: CGFloat = 16.0 / 9.0
+				let videoHeight = min(size.height, size.width / videoAspect)
+				let videoSize = CGSize(width: videoHeight * videoAspect, height: videoHeight)
+				let origin = CGPoint(x: (size.width - videoSize.width) / 2, y: (size.height - videoSize.height) / 2)
+				return CGRect(
+					x: origin.x + visionRect.minX * videoSize.width,
+					y: origin.y + (1 - visionRect.maxY) * videoSize.height,
+					width: max(90, visionRect.width * videoSize.width),
+					height: max(52, visionRect.height * videoSize.height)
+				)
+			}
+
+			private func blackTranslationScreen(for session: StreamSession) -> some View {
 			VStack(spacing: 18) {
 					if let entry = session.translationCoordinator.latestEntry {
 						Text(entry.translatedText)

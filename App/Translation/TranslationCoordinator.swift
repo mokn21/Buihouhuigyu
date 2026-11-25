@@ -6,6 +6,7 @@ import Observation
 final class TranslationCoordinator {
     private(set) var state: TranslationState = .stopped
     private(set) var latestEntry: TranslationEntry?
+    private(set) var visibleEntries: [TranslationEntry] = []
     private(set) var recentEntries: [TranslationEntry] = []
     private(set) var lastError: String?
 	private(set) var processedFrames = 0
@@ -82,6 +83,7 @@ final class TranslationCoordinator {
         translationTasks.removeAll()
 		state = .stopped
 		lastSourceText = ""
+		visibleEntries = []
 		ocrStatusMessage = "تم إيقاف OCR والترجمة."
 		translationStatusMessage = "تم إيقاف الترجمة."
     }
@@ -113,12 +115,12 @@ final class TranslationCoordinator {
         }
     }
 
-	private func acceptOCR(_ result: OCRResult) {
-		let normalized = Self.normalize(result.text)
-		guard !normalized.isEmpty, normalized != lastSourceText else {
-			skippedFrames += 1
-			return
-		}
+		private func acceptOCR(_ result: OCRResult) {
+			let observations = result.observations.filter { !Self.normalize($0.text).isEmpty }
+			guard !observations.isEmpty else {
+				skippedFrames += 1
+				return
+			}
 		// Do not queue a second Core ML/Apple translation while the previous one
 		// is still running. Keeping lastSourceText unchanged here lets the next
 		// OCR frame retry the latest text without building an unbounded backlog.
@@ -126,63 +128,67 @@ final class TranslationCoordinator {
 			skippedFrames += 1
 			return
 		}
-			lastSourceText = normalized
-		lastDetectedText = result.text
-		processedFrames += 1
-        nextGeneration &+= 1
-        let generation = nextGeneration
-        let translator = self.translator
-
-		if let cached = cache[normalized] {
-			translationStatusMessage = "تمت إعادة استخدام ترجمة محفوظة."
-			publish(cached, source: result, generation: generation)
-			return
-		}
-
+			let normalizedTexts = observations.map { Self.normalize($0.text) }
+			guard normalizedTexts.contains(where: { $0 != lastSourceText }) else {
+				skippedFrames += 1
+				return
+			}
+			lastSourceText = normalizedTexts.last ?? ""
+			lastDetectedText = result.text
+			visibleEntries = []
+			processedFrames += 1
+	        nextGeneration &+= 1
+	        let generation = nextGeneration
+	        let translator = self.translator
 			translationStatusMessage = "أُرسل النص إلى خادم الذكاء الاصطناعي الخارجي…"
-		submittedTranslationCount += 1
-		let task = Task { [weak self] in
-            guard let self else { return }
-            do {
-				let translated = try await translator.translate(result.text)
-	                guard !Task.isCancelled else { return }
-	                guard !translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-	                    throw TranslationError.failed("أعاد محرك الترجمة نتيجة فارغة؛ لم تُعرض ترجمة وهمية.")
-	                }
-				self.cache[normalized] = translated
-				self.returnedTranslationCount += 1
-					self.translationStatusMessage = "عادت الترجمة العربية من الخادم الخارجي أو Apple Translation."
-				self.publish(translated, source: result, generation: generation)
+			let task = Task { [weak self] in
+	            guard let self else { return }
+			for observation in observations {
+				guard !Task.isCancelled else { return }
+				let normalized = Self.normalize(observation.text)
+				if let cached = self.cache[normalized] {
+					self.publish(cached, observation: observation, result: result, generation: generation)
+					continue
+				}
+				self.submittedTranslationCount += 1
+				do {
+					let translated = try await translator.translate(observation.text)
+					guard !Task.isCancelled, !translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+					self.cache[normalized] = translated
+					self.returnedTranslationCount += 1
+					self.translationStatusMessage = "عادت الترجمات المكانية من الخادم الخارجي أو Apple Translation."
+					self.publish(translated, observation: observation, result: result, generation: generation)
 				} catch {
-		                guard !Task.isCancelled else { return }
+					guard !Task.isCancelled else { return }
 					self.lastSourceText = ""
 					self.lastError = error.localizedDescription
-				self.translationStatusMessage = "تعذرت ترجمة النص الحالي: \(error.localizedDescription) سيستمر OCR وستتم إعادة المحاولة عند ظهور نص جديد."
-				// A single unavailable model/session must not stop OCR. Keeping the
-				// coordinator running allows the user to install models or retry without
-				// losing subsequent frames.
+					self.translationStatusMessage = "تعذرت ترجمة نص مكاني: \(error.localizedDescription)"
+				}
 			}
-            self.translationTasks[generation] = nil
-        }
-        translationTasks[generation] = task
-    }
+	            self.translationTasks[generation] = nil
+	        }
+	        translationTasks[generation] = task
+	    }
 
-    private func publish(_ translated: String, source: OCRResult, generation: UInt64) {
+	    private func publish(_ translated: String, observation: OCRTextObservation, result: OCRResult, generation: UInt64) {
         // A late translation may finish, but it must never replace a newer one.
         guard generation == nextGeneration, (state == .running || state == .paused) else { return }
         let finished = ContinuousClock.now
 		let entry = TranslationEntry(
-            sourceText: source.text,
-            translatedText: translated,
-            metrics: LatencyMetrics(
-                capturedAt: source.capturedAt,
-                ocrStartedAt: source.startedAt,
-                ocrFinishedAt: source.finishedAt,
+	            sourceText: observation.text,
+	            translatedText: translated,
+	            boundingBox: observation.boundingBox,
+	            confidence: observation.confidence,
+	            metrics: LatencyMetrics(
+	                capturedAt: result.capturedAt,
+	                ocrStartedAt: result.startedAt,
+	                ocrFinishedAt: result.finishedAt,
                 translationFinishedAt: finished,
                 displayedAt: ContinuousClock.now
             )
 		)
 		latestEntry = entry
+		visibleEntries.append(entry)
 		recentEntries = ([entry] + recentEntries).prefix(6).map { $0 }
 	}
 
