@@ -569,12 +569,17 @@ struct StreamView: View {
 	@ViewBuilder
 	private func overlay(for session: StreamSession) -> some View {
 		switch session.state {
-		case .idle, .connecting:
-			VStack(spacing: 12) {
-				ProgressView().controlSize(.large)
-				Text("جارٍ الاتصال بـ \(console.name)…").foregroundStyle(.secondary)
-					Button("إلغاء") { dismiss() }.buttonStyle(.bordered)
-			}
+			case .idle, .connecting:
+				VStack(spacing: 12) {
+					ProgressView().controlSize(.large)
+					Text("جارٍ الاتصال بـ \(console.name)…").foregroundStyle(.secondary)
+					Button("إلغاء") {
+						stop()
+						dismiss()
+					}.buttonStyle(.bordered)
+					Button("فتح التشخيص") { showTranslationDiagnostics = true }
+						.buttonStyle(.bordered)
+				}
 		case .streaming:
 			if session.settings.showStats {
 				StatsOverlay(stats: session.stats, settings: session.settings)

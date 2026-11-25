@@ -67,6 +67,8 @@ final class StreamSession {
 	@ObservationIgnored private var reconnectAttempt = 0
 	@ObservationIgnored private var reconnectWork: DispatchWorkItem?
 	@ObservationIgnored private var connectionTimeoutWork: DispatchWorkItem?
+	@ObservationIgnored private var startWork: DispatchWorkItem?
+	@ObservationIgnored private var stopRequestedDuringStart = false
 	@ObservationIgnored private var startInProgress = false
 	@ObservationIgnored private var activeAttemptID: UUID?
 	@ObservationIgnored private var loggedFirstVideo = false
@@ -101,6 +103,7 @@ final class StreamSession {
 			return
 		}
 		startInProgress = true
+		stopRequestedDuringStart = false
 		let attemptID = UUID()
 		activeAttemptID = attemptID
 		loggedFirstVideo = false
@@ -185,8 +188,10 @@ final class StreamSession {
 				let eventName = String(describing: type)
 				log.notice("Remote Play first Chiaki event type=\(eventName, privacy: .public) attempt=\(session.activeAttemptID?.uuidString ?? "none", privacy: .public)")
 			}
-			let text = message.map { String(cString: $0) }
-			DispatchQueue.main.async { session.handleEvent(type, code: code, message: text) }
+				let text = message.map { String(cString: $0) }
+				Task { @MainActor in
+					session.handleEvent(type, code: code, message: text)
+				}
 		}
 		callbacks.on_rumble = { user, left, right in
 			guard let user else { return }
@@ -243,12 +248,32 @@ final class StreamSession {
 		audio.start(session: created)
 		audio.muted = paused
 
-		log.notice("Starting Chiaki session attempt=\(attemptID.uuidString, privacy: .public)")
-		let err = ck_session_start(created)
+			log.notice("Starting Chiaki session off MainActor attempt=\(attemptID.uuidString, privacy: .public)")
+			let work = DispatchWorkItem { [weak self] in
+				let err = ck_session_start(created)
+				log.notice("ck_session_start returned code=\(err) attempt=\(attemptID.uuidString, privacy: .public)")
+				DispatchQueue.main.async {
+					guard let self, self.activeAttemptID == attemptID else { return }
+					self.startWork = nil
+					self.finishStart(err, attemptID: attemptID)
+				}
+			}
+			startWork = work
+			DispatchQueue.global(qos: .userInitiated).async(execute: work)
+		}
+
+	private func finishStart(_ err: Int32, attemptID: UUID) {
+		guard activeAttemptID == attemptID else { return }
 		if err != 0 {
 			log.error("Chiaki session start failed code=\(err) attempt=\(attemptID.uuidString, privacy: .public)")
 			teardown()
-			state = .ended(error: "Couldn't start the session (error \(err)).")
+			state = .ended(error: "تعذر بدء جلسة Remote Play (رمز \(err)).")
+			return
+		}
+		if stopRequestedDuringStart {
+			log.notice("Remote Play start completed after cancellation; cleaning up attempt=\(attemptID.uuidString, privacy: .public)")
+			teardown()
+			state = .ended(error: nil)
 			return
 		}
 		let timeout = DispatchWorkItem { [weak self] in
@@ -361,6 +386,11 @@ final class StreamSession {
 
 	private func teardown() {
 		log.notice("StreamSession.teardown for \(self.console.name, privacy: .public)")
+		if startWork != nil {
+			stopRequestedDuringStart = true
+			log.notice("Deferring teardown until ck_session_start returns for \(self.console.name, privacy: .public)")
+			return
+		}
 		connectionTimeoutWork?.cancel()
 		connectionTimeoutWork = nil
 		statsTimer?.invalidate()
@@ -379,6 +409,7 @@ final class StreamSession {
 		selfRef?.release()
 		selfRef = nil
 		activeAttemptID = nil
+		stopRequestedDuringStart = false
 		startInProgress = false
 		UIApplication.shared.isIdleTimerDisabled = false
 	}
@@ -419,6 +450,7 @@ final class StreamSession {
 
 	// MARK: - Events (main thread)
 
+	@MainActor
 	private func handleEvent(_ type: CKEventType, code: Int32, message: String?) {
 		switch type {
 		case CK_EVENT_CONNECTED:
