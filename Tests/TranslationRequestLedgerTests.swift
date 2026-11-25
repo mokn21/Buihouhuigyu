@@ -66,8 +66,8 @@ final class TranslationRequestLedgerTests: XCTestCase {
 		let ranges = bytes.withUnsafeBufferPointer { buffer in
 			VideoDecoder.splitAnnexB(buffer.baseAddress!, count: buffer.count)
 		}
-		XCTAssertEqual(ranges.map { Array(bytes[$0]) }, [
-			[0x67, 0x64, 0],
+			XCTAssertEqual(ranges.map { Array(bytes[$0]) }, [
+				[0x67, 0x64],
 			[0x68, 0xee],
 			[0x65, 0x88, 0x84],
 		])
