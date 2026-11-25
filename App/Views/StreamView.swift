@@ -501,17 +501,8 @@ struct StreamView: View {
 			/// Converts Vision's bottom-left normalized coordinates into the displayed
 			/// 16:9 video rectangle, including iPad letterboxing.
 			private func spatialFrame(for visionRect: CGRect, in size: CGSize) -> CGRect {
-				guard size.width > 0, size.height > 0 else { return .zero }
-				let videoAspect: CGFloat = 16.0 / 9.0
-				let videoHeight = min(size.height, size.width / videoAspect)
-				let videoSize = CGSize(width: videoHeight * videoAspect, height: videoHeight)
-				let origin = CGPoint(x: (size.width - videoSize.width) / 2, y: (size.height - videoSize.height) / 2)
-				return CGRect(
-					x: origin.x + visionRect.minX * videoSize.width,
-					y: origin.y + (1 - visionRect.maxY) * videoSize.height,
-					width: max(90, visionRect.width * videoSize.width),
-					height: max(52, visionRect.height * videoSize.height)
-				)
+				let rect = VideoCoordinateMapper.displayRect(for: visionRect, in: size)
+				return CGRect(x: rect.minX, y: rect.minY, width: max(90, rect.width), height: max(52, rect.height))
 			}
 
 			private func blackTranslationScreen(for session: StreamSession) -> some View {

@@ -68,6 +68,24 @@ struct OCRResult: Equatable {
     var text: String { observations.map(\.text).joined(separator: " ") }
 }
 
+enum VideoCoordinateMapper {
+    /// Maps Vision's normalized bottom-left rectangle to the displayed video.
+    /// The video is aspect-fitted inside the supplied view, so unused area is
+    /// treated as letterboxing and excluded from the returned rectangle.
+    static func displayRect(for visionRect: CGRect, in viewSize: CGSize, videoAspect: CGFloat = 16.0 / 9.0) -> CGRect {
+        guard viewSize.width > 0, viewSize.height > 0, videoAspect > 0 else { return .zero }
+        let videoHeight = min(viewSize.height, viewSize.width / videoAspect)
+        let videoSize = CGSize(width: videoHeight * videoAspect, height: videoHeight)
+        let origin = CGPoint(x: (viewSize.width - videoSize.width) / 2, y: (viewSize.height - videoSize.height) / 2)
+        return CGRect(
+            x: origin.x + visionRect.minX * videoSize.width,
+            y: origin.y + (1 - visionRect.maxY) * videoSize.height,
+            width: visionRect.width * videoSize.width,
+            height: visionRect.height * videoSize.height
+        )
+    }
+}
+
 struct TranslationEntry: Identifiable, Equatable {
     let id = UUID()
     let sourceText: String
