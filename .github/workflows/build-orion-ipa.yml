@@ -52,10 +52,11 @@ jobs:
           chmod +x scripts/build-chiaki.sh
           scripts/build-chiaki.sh
           test -d Frameworks/ChiakiKit.xcframework
-          test -f Frameworks/ChiakiKit.xcframework/ios-arm64/ChiakiKit
-          test -f Frameworks/ChiakiKit.xcframework/ios-arm64-simulator/ChiakiKit
-          lipo -info Frameworks/ChiakiKit.xcframework/ios-arm64/ChiakiKit
-          lipo -info Frameworks/ChiakiKit.xcframework/ios-arm64-simulator/ChiakiKit
+          DEVICE_LIB="$(find Frameworks/ChiakiKit.xcframework -path '*/ios-arm64/libChiakiKit.a' -type f -print -quit)"
+          SIM_LIB="$(find Frameworks/ChiakiKit.xcframework -path '*/ios-arm64-simulator/libChiakiKit.a' -type f -print -quit)"
+          test -n "$DEVICE_LIB" && test -n "$SIM_LIB"
+          lipo -info "$DEVICE_LIB"
+          lipo -info "$SIM_LIB"
           echo "PASS: ChiakiKit.xcframework generated for the configured iOS toolchain."
 
       - name: Run translation request management tests
